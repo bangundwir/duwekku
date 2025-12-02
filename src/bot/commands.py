@@ -10,6 +10,7 @@ from src.database.manager import DatabaseManager
 from src.ai.provider_manager import ProviderManager
 from src.utils.exporter import TransactionExporter
 from src.models.subscription import Subscription, SUBSCRIPTION_CATEGORIES
+from src.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,9 @@ HELP_MESSAGE = """
 /addsub `langganan netflix 150rb 1 bulan`
 ↳ Tambah dengan bahasa natural (AI parsing)
 
+/addsub `langganan spotify 60rb 1 tahun mulai 1 januari 2025`
+↳ Tambah dengan tanggal mulai custom
+
 /addsub `[nama]` `[jumlah]` `[mulai]` `[akhir]` `[kategori]`
 ↳ Tambah langganan baru
 ↳ Contoh: `/addsub Netflix 150000 2024-01-01 2024-12-31 streaming`
@@ -126,6 +130,9 @@ HELP_MESSAGE = """
 
 /subcost
 ↳ Lihat total biaya langganan bulanan
+
+/exportsubs
+↳ Export langganan ke HTML (responsive)
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 💡 *TIPS FORMAT ANGKA:*
@@ -555,31 +562,62 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     keyboard = [[InlineKeyboardButton("➕ Tambah Langganan", callback_data="show_addsub")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await query.edit_message_text(
-                        "📭 Belum ada langganan.\nTambahkan langganan pertama Anda!",
+                        "📭 *BELUM ADA LANGGANAN*\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        "Tambahkan langganan pertama Anda!\n\n"
+                        "💡 Contoh:\n"
+                        "`langganan netflix 50rb 1 bulan`",
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
                     return
                 
+                # Count by status
+                active_count = len([s for s in subscriptions if s.status == "active"])
+                expiring_count = len([s for s in subscriptions if s.status == "expiring_soon"])
+                expired_count = len([s for s in subscriptions if s.status == "expired"])
+                
                 lines = [
                     "📅 *DAFTAR LANGGANAN*",
                     "━━━━━━━━━━━━━━━━━━━━━━━",
-                    f"💰 Total: *{fmt(cost_info['total'])}*/bulan",
+                    f"💰 Total Biaya: *{fmt(cost_info['total'])}*/bulan",
+                    f"📊 Aktif: {active_count} │ ⚠️ Segera: {expiring_count} │ ❌ Expired: {expired_count}",
                     "",
                 ]
                 
                 status_emoji = {"active": "✅", "expiring_soon": "⚠️", "expired": "❌"}
-                for sub in sorted(subscriptions, key=lambda x: x.end_date):
+                for sub in sorted(subscriptions, key=lambda x: (x.status != "expiring_soon", x.end_date)):
                     s_emoji = status_emoji.get(sub.status, "📦")
-                    days_text = f"{sub.days_remaining}d" if sub.days_remaining > 0 else "Expired"
-                    lines.append(f"{s_emoji} *{sub.name}* - {fmt(sub.amount)}")
-                    lines.append(f"   ⏳ {days_text} │ ID: `{sub.id}`")
+                    
+                    # Better countdown display
+                    if sub.days_remaining <= 0:
+                        days_text = "❌ Expired"
+                    elif sub.days_remaining == 1:
+                        days_text = "⏰ 1 hari lagi!"
+                    elif sub.days_remaining <= 7:
+                        days_text = f"⚠️ {sub.days_remaining} hari lagi"
+                    elif sub.days_remaining <= 30:
+                        days_text = f"📆 {sub.days_remaining} hari"
+                    else:
+                        months = sub.days_remaining // 30
+                        days_text = f"📅 ~{months} bulan"
+                    
+                    lines.append(f"{s_emoji} *{sub.name}*")
+                    lines.append(f"   💵 {fmt(sub.amount)} │ {days_text}")
+                    lines.append(f"   📅 {sub.start_date.strftime('%d/%m/%y')} → {sub.end_date.strftime('%d/%m/%y')} │ `{sub.id}`")
                     lines.append("")
                 
                 keyboard = [
                     [
                         InlineKeyboardButton("➕ Tambah", callback_data="show_addsub"),
                         InlineKeyboardButton("💰 Biaya", callback_data="show_subcost"),
+                    ],
+                    [
+                        InlineKeyboardButton("🗑️ Hapus", callback_data="show_delsub"),
+                        InlineKeyboardButton("📥 Export HTML", callback_data="export_subs"),
+                    ],
+                    [
+                        InlineKeyboardButton("🔄 Refresh", callback_data="show_subs"),
                     ],
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -725,6 +763,149 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
+        # Delete subscription callbacks
+        elif query.data == "show_delsub":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+                
+                if not subscriptions:
+                    keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(
+                        "📭 Tidak ada langganan untuk dihapus.",
+                        reply_markup=reply_markup
+                    )
+                    return
+                
+                def fmt(amount):
+                    return f"Rp {amount:,.0f}".replace(",", ".")
+                
+                lines = [
+                    "🗑️ *HAPUS LANGGANAN*",
+                    "━━━━━━━━━━━━━━━━━━━━━━━",
+                    "",
+                    "Pilih langganan yang ingin dihapus:",
+                    "",
+                ]
+                
+                # Create buttons for each subscription
+                keyboard = []
+                for sub in subscriptions:
+                    btn_text = f"🗑️ {sub.name} - {fmt(sub.amount)}"
+                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"confirm_delsub:{sub.id}")])
+                
+                keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data.startswith("confirm_delsub:"):
+            user_id = query.from_user.id
+            sub_id = int(query.data.split(":")[1])
+            
+            if self.subscription_manager:
+                sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+                
+                if not sub:
+                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+                    return
+                
+                def fmt(amount):
+                    return f"Rp {amount:,.0f}".replace(",", ".")
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✅ Ya, Hapus", callback_data=f"do_delsub:{sub_id}"),
+                        InlineKeyboardButton("❌ Batal", callback_data="show_subs"),
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await query.edit_message_text(
+                    f"⚠️ *KONFIRMASI HAPUS*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"Yakin ingin menghapus langganan ini?\n\n"
+                    f"📦 *{sub.name}*\n"
+                    f"💵 {fmt(sub.amount)}/bulan\n"
+                    f"📅 Berakhir: {sub.end_date.strftime('%d %b %Y')}\n\n"
+                    f"⚠️ Tindakan ini tidak dapat dibatalkan!",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+        
+        elif query.data.startswith("do_delsub:"):
+            user_id = query.from_user.id
+            sub_id = int(query.data.split(":")[1])
+            
+            if self.subscription_manager:
+                sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+                sub_name = sub.name if sub else "Unknown"
+                
+                if self.subscription_manager.delete_subscription(user_id, sub_id):
+                    keyboard = [[InlineKeyboardButton("📋 Lihat Langganan", callback_data="show_subs")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await query.edit_message_text(
+                        f"✅ *LANGGANAN DIHAPUS*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"🗑️ *{sub_name}* berhasil dihapus",
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await query.edit_message_text("❌ Gagal menghapus langganan")
+        
+        # Subscription to Transaction callback
+        elif query.data.startswith("sub_to_tx:"):
+            user_id = query.from_user.id
+            sub_id = int(query.data.split(":")[1])
+            
+            if self.subscription_manager:
+                sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+                
+                if not sub:
+                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+                    return
+                
+                # Create transaction from subscription
+                transaction = Transaction(
+                    user_id=user_id,
+                    type="expense",
+                    amount=sub.amount,
+                    category="tagihan",
+                    description=f"Pembayaran {sub.name}",
+                    created_at=datetime.now(),
+                )
+                
+                saved = self.db.save_transaction(transaction)
+                
+                if saved:
+                    def fmt(amount):
+                        return f"Rp {amount:,.0f}".replace(",", ".")
+                    
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("📋 Lihat Transaksi", callback_data="history"),
+                            InlineKeyboardButton("📅 Lihat Langganan", callback_data="show_subs"),
+                        ],
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await query.edit_message_text(
+                        f"✅ *PEMBAYARAN TERCATAT!*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"💸 *Pengeluaran*\n"
+                        f"📦 {sub.name}\n"
+                        f"💵 {fmt(sub.amount)}\n"
+                        f"📁 Kategori: Tagihan\n"
+                        f"🆔 ID Transaksi: `{saved.id}`\n\n"
+                        f"💡 Transaksi ini sudah tercatat di history Anda",
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await query.edit_message_text("❌ Gagal mencatat transaksi")
         
         # Export callbacks
         elif query.data == "show_export":
@@ -1147,6 +1328,20 @@ Pilih format export:
             for w in analysis.warnings[:2]:
                 lines.append(f"• {w}")
         
+        # Subscription info
+        if analysis.subscription_count > 0:
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("*📅 LANGGANAN AKTIF*")
+            lines.append(f"📦 Total: {analysis.subscription_count} langganan")
+            lines.append(f"💰 Biaya: {fmt(analysis.subscription_monthly_cost)}/bulan")
+            
+            if analysis.expiring_subscriptions:
+                lines.append("")
+                lines.append("⚠️ *Segera Berakhir:*")
+                for sub in analysis.expiring_subscriptions[:3]:
+                    lines.append(f"• {sub.name} ({sub.days_remaining} hari)")
+        
         # Suggestions (shortened)
         if analysis.suggestions:
             lines.append("")
@@ -1222,7 +1417,16 @@ Pilih format export:
             
             if parsed and parsed.is_valid():
                 from dateutil.relativedelta import relativedelta
-                start_date = date.today()
+                
+                # Use parsed start_date if available, otherwise use today
+                if parsed.start_date:
+                    try:
+                        start_date = date.fromisoformat(parsed.start_date)
+                    except ValueError:
+                        start_date = date.today()
+                else:
+                    start_date = date.today()
+                
                 end_date = start_date + relativedelta(months=parsed.duration_months)
                 
                 sub = Subscription(
@@ -1237,19 +1441,54 @@ Pilih format export:
                 sub_id = self.subscription_manager.add_subscription(sub)
                 sub.id = sub_id
                 
+                # Also create transaction for the subscription payment
+                transaction = Transaction(
+                    user_id=user_id,
+                    type="expense",
+                    amount=parsed.amount,
+                    category="langganan",
+                    description=f"Langganan {parsed.name}",
+                    created_at=datetime.now(),
+                )
+                saved_tx = self.db.save_transaction(transaction)
+                
+                # Format amount
+                amount_str = f"{parsed.amount:,.0f}".replace(",", ".")
+                
+                # Duration text
+                if parsed.duration_months == 1:
+                    dur_text = "1 bulan"
+                elif parsed.duration_months == 12:
+                    dur_text = "1 tahun"
+                else:
+                    dur_text = f"{parsed.duration_months} bulan"
+                
                 # Show with action buttons
                 keyboard = [
                     [
-                        InlineKeyboardButton("📋 Lihat Semua", callback_data="show_subs"),
-                        InlineKeyboardButton("➕ Tambah Lagi", callback_data="show_addsub"),
+                        InlineKeyboardButton("📋 Lihat Langganan", callback_data="show_subs"),
+                        InlineKeyboardButton("📊 Lihat Transaksi", callback_data="history"),
                     ],
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
+                tx_info = ""
+                if saved_tx:
+                    tx_info = f"\n\n💸 *Transaksi Tercatat:*\n   ID: `{saved_tx.id}` │ Kategori: Langganan"
+                
                 await update.message.reply_text(
-                    f"✅ *LANGGANAN DITAMBAHKAN*\n"
+                    f"✅ *LANGGANAN BERHASIL DITAMBAHKAN!*\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{sub.format_display()}",
+                    f"📦 *{parsed.name}*\n"
+                    f"💵 Biaya: `Rp {amount_str}`\n"
+                    f"📁 Kategori: {parsed.category.title()}\n"
+                    f"⏱️ Durasi: {dur_text}\n\n"
+                    f"📅 *Periode Langganan:*\n"
+                    f"   Mulai: `{start_date.strftime('%d %B %Y')}`\n"
+                    f"   Berakhir: `{end_date.strftime('%d %B %Y')}`\n\n"
+                    f"⏳ Sisa waktu: *{sub.days_remaining} hari*\n"
+                    f"🆔 ID Langganan: `{sub_id}`"
+                    f"{tx_info}",
                     parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
@@ -1603,6 +1842,57 @@ Pilih format export:
 📊 Analisis: {'Ya' if analysis else 'Tidak'}
 ━━━━━━━━━━━━━━━━━━━━━━━
 💡 Buka di browser untuk melihat
+"""
+        await update.message.reply_document(
+            document=html_bytes,
+            filename=filename,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+
+    async def cmd_exportsubs(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /exportsubs command - export subscriptions to HTML."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+        
+        if not subscriptions:
+            await update.message.reply_text("📭 Tidak ada langganan untuk diexport")
+            return
+        
+        await update.message.reply_text("⏳ Sedang menyiapkan laporan langganan...")
+        
+        # Generate subscription HTML
+        html_content = TransactionExporter.subscriptions_to_html(
+            subscriptions=subscriptions,
+            title="Daftar Langganan"
+        )
+        
+        # Calculate totals for caption
+        active_subs = [s for s in subscriptions if s.status != "expired"]
+        total_monthly = sum(s.amount for s in active_subs)
+        
+        def fmt(amount):
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        # Send as document
+        filename = f"langganan_{datetime.now().strftime('%Y%m%d')}.html"
+        html_bytes = io.BytesIO(html_content.encode('utf-8'))
+        html_bytes.name = filename
+        
+        caption = f"""
+✅ *EXPORT DAFTAR LANGGANAN*
+━━━━━━━━━━━━━━━━━━━━━━━
+📅 Total Langganan: {len(subscriptions)}
+✅ Aktif: {len(active_subs)}
+💰 Biaya Bulanan: {fmt(total_monthly)}
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Buka di browser untuk melihat
+📱 Responsive untuk mobile
 """
         await update.message.reply_document(
             document=html_bytes,

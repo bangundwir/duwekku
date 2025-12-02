@@ -864,3 +864,401 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .footer{text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);margin-top:16px}
 @media(max-width:768px){.charts-grid{grid-template-columns:1fr}.health-score-card{flex-direction:column;text-align:center}}
 </style>'''
+
+    @staticmethod
+    def subscriptions_to_html(subscriptions: list[Subscription], title: str = "Daftar Langganan") -> str:
+        """Export subscriptions to responsive HTML."""
+        now = datetime.now()
+        
+        def fmt(amount: float) -> str:
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        # Calculate totals
+        active_subs = [s for s in subscriptions if s.status != "expired"]
+        total_monthly = sum(s.amount for s in active_subs)
+        total_yearly = total_monthly * 12
+        
+        # Group by category
+        by_category = {}
+        for sub in subscriptions:
+            if sub.category not in by_category:
+                by_category[sub.category] = []
+            by_category[sub.category].append(sub)
+        
+        # Category emoji mapping
+        cat_emoji = {
+            "streaming": "🎬",
+            "hosting": "🖥️",
+            "domain": "🌐",
+            "software": "💿",
+            "other": "📦",
+        }
+        
+        # Status emoji and colors
+        status_info = {
+            "active": ("✅", "Aktif", "#10b981"),
+            "expiring_soon": ("⚠️", "Segera Berakhir", "#f59e0b"),
+            "expired": ("❌", "Kadaluarsa", "#ef4444"),
+        }
+        
+        # Generate subscription cards
+        sub_cards = ""
+        for category, subs in sorted(by_category.items()):
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            emoji = cat_emoji.get(category, "📦")
+            
+            sub_cards += f'''
+            <div class="category-section">
+                <div class="category-header">
+                    <span class="category-name">{emoji} {category.title()}</span>
+                    <span class="category-total">{fmt(cat_total)}/bulan</span>
+                </div>
+                <div class="sub-grid">
+            '''
+            
+            for sub in sorted(subs, key=lambda x: x.end_date):
+                s_emoji, s_text, s_color = status_info.get(sub.status, ("📦", "Unknown", "#9ca3af"))
+                
+                # Calculate progress
+                total_days = (sub.end_date - sub.start_date).days
+                elapsed_days = (datetime.now().date() - sub.start_date).days
+                progress = min(100, max(0, (elapsed_days / total_days * 100) if total_days > 0 else 0))
+                
+                # Days remaining text
+                if sub.days_remaining == 0:
+                    days_text = "Berakhir hari ini!"
+                elif sub.days_remaining == 1:
+                    days_text = "1 hari lagi"
+                elif sub.days_remaining < 0:
+                    days_text = "Sudah berakhir"
+                else:
+                    days_text = f"{sub.days_remaining} hari lagi"
+                
+                sub_cards += f'''
+                <div class="sub-card" style="--status-color: {s_color}">
+                    <div class="sub-header">
+                        <span class="sub-name">{sub.name}</span>
+                        <span class="sub-status">{s_emoji} {s_text}</span>
+                    </div>
+                    <div class="sub-amount-row">
+                        <span class="sub-price">{fmt(sub.amount)}</span>
+                        <span class="sub-period">/bulan</span>
+                    </div>
+                    <div class="sub-dates-row">
+                        <div class="date-item">
+                            <span class="date-label">Mulai</span>
+                            <span class="date-value">{sub.start_date.strftime("%d %b %Y")}</span>
+                        </div>
+                        <div class="date-item">
+                            <span class="date-label">Berakhir</span>
+                            <span class="date-value">{sub.end_date.strftime("%d %b %Y")}</span>
+                        </div>
+                    </div>
+                    <div class="progress-section">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {progress}%"></div>
+                        </div>
+                        <span class="days-remaining">{days_text}</span>
+                    </div>
+                </div>
+                '''
+            
+            sub_cards += '</div></div>'
+        
+        # Generate category breakdown for chart
+        cat_data = []
+        for cat, subs in by_category.items():
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            if cat_total > 0:
+                cat_data.append({"name": cat.title(), "amount": cat_total})
+        
+        cat_json = json.dumps(cat_data)
+        
+        html = f'''<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {{
+            --primary: #6366f1;
+            --income: #10b981;
+            --expense: #ef4444;
+            --warning: #f59e0b;
+            --bg: #0f0f1a;
+            --card: #1a1a2e;
+            --text: #fff;
+            --text-muted: #9ca3af;
+            --border: #2d2d4a;
+        }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }}
+        .container {{
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 16px;
+        }}
+        .header {{
+            background: linear-gradient(135deg, var(--card), #16213e);
+            padding: 24px;
+            border-radius: 16px;
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        .header h1 {{ font-size: 24px; margin-bottom: 8px; }}
+        .header .subtitle {{ font-size: 14px; color: var(--text-muted); }}
+        
+        .summary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }}
+        .summary-card {{
+            background: var(--card);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }}
+        .summary-card .label {{
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }}
+        .summary-card .value {{
+            font-size: 18px;
+            font-weight: 700;
+        }}
+        .summary-card.active .value {{ color: var(--income); }}
+        .summary-card.monthly .value {{ color: var(--primary); }}
+        .summary-card.yearly .value {{ color: var(--warning); }}
+        
+        .chart-section {{
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }}
+        .chart-section h3 {{
+            font-size: 16px;
+            margin-bottom: 16px;
+            text-align: center;
+        }}
+        .chart-container {{
+            height: 250px;
+            position: relative;
+        }}
+        
+        .category-section {{
+            margin-bottom: 24px;
+        }}
+        .category-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 12px;
+        }}
+        .category-name {{
+            font-size: 16px;
+            font-weight: 600;
+        }}
+        .category-total {{
+            color: var(--text-muted);
+            font-size: 14px;
+        }}
+        
+        .sub-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }}
+        .sub-card {{
+            background: var(--card);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--status-color);
+        }}
+        .sub-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }}
+        .sub-name {{
+            font-size: 16px;
+            font-weight: 600;
+        }}
+        .sub-status {{
+            font-size: 12px;
+            color: var(--text-muted);
+        }}
+        .sub-amount-row {{
+            margin-bottom: 12px;
+        }}
+        .sub-price {{
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+        }}
+        .sub-period {{
+            font-size: 14px;
+            color: var(--text-muted);
+        }}
+        .sub-dates-row {{
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+        }}
+        .date-item {{
+            flex: 1;
+        }}
+        .date-label {{
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }}
+        .date-value {{
+            font-size: 13px;
+            font-weight: 500;
+        }}
+        .progress-section {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .progress-bar {{
+            flex: 1;
+            height: 6px;
+            background: var(--bg);
+            border-radius: 3px;
+            overflow: hidden;
+        }}
+        .progress-fill {{
+            height: 100%;
+            background: var(--status-color);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }}
+        .days-remaining {{
+            font-size: 12px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }}
+        
+        .footer {{
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border);
+            margin-top: 24px;
+        }}
+        
+        @media (max-width: 600px) {{
+            .container {{ padding: 12px; }}
+            .header {{ padding: 16px; }}
+            .header h1 {{ font-size: 20px; }}
+            .summary-grid {{ grid-template-columns: 1fr 1fr; }}
+            .sub-grid {{ grid-template-columns: 1fr; }}
+            .sub-price {{ font-size: 20px; }}
+            .chart-container {{ height: 200px; }}
+        }}
+        
+        @media print {{
+            body {{ background: #fff; color: #000; }}
+            .container {{ box-shadow: none; }}
+            .header {{ background: #f3f4f6; color: #000; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 {title}</h1>
+            <div class="subtitle">Diperbarui: {now.strftime("%d %B %Y, %H:%M")}</div>
+        </div>
+        
+        <div class="summary-grid">
+            <div class="summary-card active">
+                <div class="label">Langganan Aktif</div>
+                <div class="value">{len(active_subs)}</div>
+            </div>
+            <div class="summary-card monthly">
+                <div class="label">Biaya Bulanan</div>
+                <div class="value">{fmt(total_monthly)}</div>
+            </div>
+            <div class="summary-card yearly">
+                <div class="label">Estimasi Tahunan</div>
+                <div class="value">{fmt(total_yearly)}</div>
+            </div>
+        </div>
+        
+        <div class="chart-section">
+            <h3>📊 Distribusi Biaya per Kategori</h3>
+            <div class="chart-container">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+        
+        {sub_cards}
+        
+        <div class="footer">
+            <p>💰 Money Tracker Bot</p>
+            <p>{len(subscriptions)} langganan • Total {fmt(total_monthly)}/bulan</p>
+        </div>
+    </div>
+    
+    <script>
+        const categoryData = {cat_json};
+        const chartColors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+        
+        if (categoryData.length > 0) {{
+            new Chart(document.getElementById('categoryChart'), {{
+                type: 'doughnut',
+                data: {{
+                    labels: categoryData.map(d => d.name),
+                    datasets: [{{
+                        data: categoryData.map(d => d.amount),
+                        backgroundColor: chartColors.slice(0, categoryData.length),
+                        borderWidth: 0
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            position: 'bottom',
+                            labels: {{
+                                padding: 12,
+                                usePointStyle: true,
+                                font: {{ size: 12 }},
+                                color: '#9ca3af'
+                            }}
+                        }}
+                    }},
+                    cutout: '60%'
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>'''
+        
+        return html

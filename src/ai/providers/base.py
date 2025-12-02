@@ -53,6 +53,7 @@ class ParsedSubscription:
     amount: float
     category: str  # streaming, hosting, domain, software, other
     duration_months: int
+    start_date: Optional[str] = None  # format YYYY-MM-DD atau None untuk hari ini
     
     def is_valid(self) -> bool:
         """Check if parsed subscription has valid data."""
@@ -119,7 +120,7 @@ class AIProvider(ABC):
 Ekstrak informasi berikut dari pesan pengguna:
 - type: "income" untuk pemasukan, "expense" untuk pengeluaran
 - amount: jumlah uang dalam angka (konversi rb=ribu=1000, jt=juta=1000000)
-- category: kategori transaksi (makanan, transportasi, belanja, tagihan, hiburan, kesehatan, pendidikan, gaji, bonus, freelance, investasi, hadiah, lainnya)
+- category: kategori transaksi (makanan, transportasi, belanja, tagihan, hiburan, kesehatan, pendidikan, langganan, gaji, bonus, freelance, investasi, hadiah, lainnya)
 - description: deskripsi singkat transaksi
 
 Pesan pengguna: "{message}"
@@ -129,15 +130,31 @@ Balas HANYA dengan JSON valid tanpa penjelasan:
 
     def _build_subscription_prompt(self, message: str) -> str:
         """Build prompt for subscription parsing."""
+        from datetime import date
+        today = date.today().strftime("%Y-%m-%d")
+        
         return f"""Kamu adalah asisten untuk mengekstrak informasi langganan/subscription dari pesan dalam bahasa Indonesia.
 
+Tanggal hari ini: {today}
+
 Ekstrak informasi berikut dari pesan pengguna:
-- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, dll)
-- amount: biaya per bulan dalam angka (konversi rb=ribu=1000, jt=juta=1000000)
-- category: kategori (streaming untuk Netflix/Spotify/YouTube, hosting untuk VPS/server, domain untuk domain, software untuk aplikasi, other untuk lainnya)
-- duration_months: durasi langganan dalam bulan (1 bulan=1, 1 tahun=12, 6 bulan=6)
+- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, dll) - capitalize dengan benar
+- amount: biaya dalam angka (konversi: rb/ribu=1000, jt/juta=1000000, k=1000)
+- category: kategori HARUS salah satu dari: streaming, hosting, domain, software, other
+  * streaming: Netflix, Spotify, YouTube Premium, Disney+, HBO, Apple Music
+  * hosting: VPS, Cloud, Server, DigitalOcean, AWS, Heroku
+  * domain: Domain, Namecheap, GoDaddy
+  * software: Adobe, Microsoft 365, Canva, Figma, JetBrains
+  * other: lainnya
+- duration_months: durasi dalam bulan (1 bulan=1, 1 tahun=12, setahun=12, sebulan=1)
+- start_date: tanggal mulai format YYYY-MM-DD. Jika tidak disebutkan gunakan null. Jika "hari ini" gunakan {today}. Konversi nama bulan Indonesia (januari=01, februari=02, maret=03, april=04, mei=05, juni=06, juli=07, agustus=08, september=09, oktober=10, november=11, december/desember=12)
+
+Contoh:
+- "langganan netflix 50rb 1 bulan" -> {{"name": "Netflix", "amount": 50000, "category": "streaming", "duration_months": 1, "start_date": null}}
+- "berlangganan spotify 60rb setahun mulai 1 januari 2025" -> {{"name": "Spotify", "amount": 60000, "category": "streaming", "duration_months": 12, "start_date": "2025-01-01"}}
+- "langganan youtube premium 80rb 3 bulan dimulai dari tanggal 15 december 2025" -> {{"name": "YouTube Premium", "amount": 80000, "category": "streaming", "duration_months": 3, "start_date": "2025-12-15"}}
 
 Pesan pengguna: "{message}"
 
 Balas HANYA dengan JSON valid tanpa penjelasan:
-{{"name": "nama layanan", "amount": angka, "category": "kategori", "duration_months": angka}}"""
+{{"name": "nama", "amount": angka, "category": "kategori", "duration_months": angka, "start_date": "YYYY-MM-DD atau null"}}"""

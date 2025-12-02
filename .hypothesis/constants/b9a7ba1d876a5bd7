@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\ai\providers\groq.py
+# hypothesis_version: 6.148.5
+
+[0.1, 10.0, 30.0, 200, 500, 'Authorization', 'Gemma 2 9B', 'Groq', 'Llama 3.1 8B Instant', 'Mixtral 8x7B', 'None', '\\{[^}]+\\}', 'amount', 'category', 'content', 'data', 'description', 'domain', 'duration_months', 'expense', 'gemma2-9b-it', 'groq', 'hosting', 'id', 'lainnya', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'name', 'null', 'other', 'owned_by', 'role', 'software', 'start_date', 'streaming', 'type', 'user', 'whisper']

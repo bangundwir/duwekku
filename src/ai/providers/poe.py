@@ -7,7 +7,7 @@ from typing import Optional
 
 import openai
 
-from .base import AIProvider, AIModel, ParsedTransaction
+from .base import AIProvider, AIModel, ParsedTransaction, ParsedSubscription
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,61 @@ class PoeProvider(AIProvider):
             
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.error(f"Failed to parse Poe response: {e}")
+            return None
+    
+    def parse_subscription(self, message: str) -> Optional[ParsedSubscription]:
+        """Parse natural language message into subscription data."""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": self._build_subscription_prompt(message)}
+                ],
+                temperature=0.1,
+            )
+            
+            content = response.choices[0].message.content
+            return self._parse_subscription_response(content)
+            
+        except Exception as e:
+            logger.error(f"Poe subscription parsing error: {e}")
+            return None
+    
+    def _parse_subscription_response(self, response: str) -> Optional[ParsedSubscription]:
+        """Parse AI response JSON into ParsedSubscription."""
+        try:
+            response = response.strip()
+            json_match = re.search(r'\{[^}]+\}', response)
+            if json_match:
+                response = json_match.group()
+            
+            data = json.loads(response)
+            
+            # Normalize category
+            category = data.get("category", "other").lower()
+            valid_categories = ["streaming", "hosting", "domain", "software", "other"]
+            if category not in valid_categories:
+                category = "other"
+            
+            # Handle start_date - can be null, "null", or actual date string
+            start_date = data.get("start_date")
+            if start_date in (None, "null", "None", ""):
+                start_date = None
+            
+            parsed = ParsedSubscription(
+                name=data.get("name", ""),
+                amount=float(data.get("amount", 0)),
+                category=category,
+                duration_months=int(data.get("duration_months", 1)),
+                start_date=start_date,
+            )
+            
+            if parsed.is_valid():
+                return parsed
+            return None
+            
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.error(f"Failed to parse subscription response: {e}")
             return None
     
     def list_models(self) -> list[AIModel]:

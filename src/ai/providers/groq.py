@@ -106,11 +106,17 @@ class GroqProvider(AIProvider):
             if category not in valid_categories:
                 category = "other"
             
+            # Handle start_date - can be null, "null", or actual date string
+            start_date = data.get("start_date")
+            if start_date in (None, "null", "None", ""):
+                start_date = None
+            
             parsed = ParsedSubscription(
                 name=data.get("name", ""),
                 amount=float(data.get("amount", 0)),
                 category=category,
                 duration_months=int(data.get("duration_months", 1)),
+                start_date=start_date,
             )
             
             if parsed.is_valid():

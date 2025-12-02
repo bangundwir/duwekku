@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\ai\parser.py
+# hypothesis_version: 6.148.5
+
+[0.1, 1.0, 1000, 1000000, '%Y-%m-%d', ',', '.', 'None', '[^\\d.]', '\\{[^}]+\\}', 'amount', 'category', 'content', 'description', 'duration_months', 'expense', 'gemini-2.5-flash', 'income', 'jt', 'juta', 'k', 'lainnya', 'm', 'name', 'null', 'other', 'rb', 'ribu', 'role', 'start_date', 'type', 'user']

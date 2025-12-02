@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\ai\providers\poe.py
+# hypothesis_version: 6.148.5
+
+[0.1, 'Claude 3 Haiku', 'Claude 3.5 Sonnet', 'GPT-4o', 'GPT-4o Mini', 'Gemini 2.5 Flash', 'Llama 3.1 405B', 'None', 'Poe (Quora)', '\\{[^}]+\\}', 'amount', 'category', 'claude-3-haiku', 'claude-3.5-sonnet', 'content', 'description', 'domain', 'duration_months', 'expense', 'gemini-2.5-flash', 'gpt-4o', 'gpt-4o-mini', 'hosting', 'lainnya', 'llama-3.1-405b', 'name', 'null', 'other', 'poe', 'role', 'software', 'start_date', 'streaming', 'test', 'type', 'user']

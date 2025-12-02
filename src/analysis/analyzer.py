@@ -24,14 +24,19 @@ class FinancialHealth:
     month_comparison: dict        # current vs previous month
     warnings: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
+    # Subscription info
+    subscription_count: int = 0
+    subscription_monthly_cost: float = 0.0
+    expiring_subscriptions: list = field(default_factory=list)
 
 
 class FinancialAnalyzer:
     """Analyzer for calculating financial health metrics."""
     
-    def __init__(self, db_manager):
-        """Initialize with database manager."""
+    def __init__(self, db_manager, subscription_manager=None):
+        """Initialize with database manager and optional subscription manager."""
         self.db = db_manager
+        self.subscription_manager = subscription_manager
     
     def analyze(self, user_id: int, month: Optional[int] = None, year: Optional[int] = None) -> Optional[FinancialHealth]:
         """Perform comprehensive financial analysis."""
@@ -69,6 +74,20 @@ class FinancialAnalyzer:
         month_comparison = self.compare_months(user_id, month, year)
         trend = month_comparison.get("trend", "stable")
         
+        # Get subscription info if available
+        subscription_count = 0
+        subscription_monthly_cost = 0.0
+        expiring_subscriptions = []
+        
+        if self.subscription_manager:
+            try:
+                active_subs = self.subscription_manager.get_subscriptions(user_id, include_expired=False)
+                subscription_count = len(active_subs)
+                subscription_monthly_cost = sum(s.amount for s in active_subs)
+                expiring_subscriptions = self.subscription_manager.get_expiring_soon(user_id, days=7)
+            except Exception as e:
+                logger.warning(f"Failed to get subscription info: {e}")
+        
         # Create health object
         health = FinancialHealth(
             score=score,
@@ -80,6 +99,9 @@ class FinancialAnalyzer:
             top_categories=top_categories,
             trend=trend,
             month_comparison=month_comparison,
+            subscription_count=subscription_count,
+            subscription_monthly_cost=subscription_monthly_cost,
+            expiring_subscriptions=expiring_subscriptions,
         )
         
         # Generate warnings and suggestions
