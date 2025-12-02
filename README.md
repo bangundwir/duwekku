@@ -245,8 +245,13 @@ ADMIN_PORT=8080
 
 ### Menjalankan Bot + Dashboard
 
-Jalankan di terminal terpisah:
+**Opsi 1: Jalankan bersamaan (recommended)**
+```bash
+uv run python run_all.py
+```
+Script ini akan menjalankan bot Telegram dan admin dashboard dalam satu proses.
 
+**Opsi 2: Jalankan terpisah**
 ```bash
 # Terminal 1: Bot
 uv run python src/main.py
