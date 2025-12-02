@@ -572,13 +572,21 @@
                         <p class="text-sm text-gray-500">Last Active</p>
                         <p class="font-medium" x-text="formatDate(selectedUser?.last_active)"></p>
                     </div>
-                    <div class="bg-gray-50 rounded-lg p-4">
-                        <p class="text-sm text-gray-500">Daily Queries</p>
-                        <p class="font-medium" x-text="selectedUser?.daily_queries_used + ' / ' + selectedUser?.daily_query_limit"></p>
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <p class="text-sm text-blue-600">⏰ Hourly Queries</p>
+                        <p class="font-medium text-blue-700" x-text="(selectedUser?.hourly_queries_used || 0) + ' / ' + (selectedUser?.hourly_query_limit || 5)"></p>
                     </div>
-                    <div class="bg-gray-50 rounded-lg p-4">
-                        <p class="text-sm text-gray-500">Monthly Queries</p>
-                        <p class="font-medium" x-text="selectedUser?.monthly_queries_used + ' / ' + selectedUser?.monthly_query_limit"></p>
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <p class="text-sm text-green-600">📅 Daily Queries</p>
+                        <p class="font-medium text-green-700" x-text="selectedUser?.daily_queries_used + ' / ' + selectedUser?.daily_query_limit"></p>
+                    </div>
+                    <div class="bg-purple-50 rounded-lg p-4">
+                        <p class="text-sm text-purple-600">📆 Monthly Queries</p>
+                        <p class="font-medium text-purple-700" x-text="selectedUser?.monthly_queries_used + ' / ' + selectedUser?.monthly_query_limit"></p>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-4">
+                        <p class="text-sm text-orange-600">📊 Total Queries</p>
+                        <p class="font-medium text-orange-700" x-text="selectedUser?.total_queries || 0"></p>
                     </div>
                 </div>
 
@@ -635,6 +643,30 @@
                     <button @click="assignSubscription()" class="mt-4 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition">
                         Assign Subscription
                     </button>
+                </div>
+
+                <!-- Reset Query Counters -->
+                <div class="border-t pt-6 mt-6">
+                    <h5 class="font-semibold text-gray-800 mb-4">🔄 Reset Query Counters</h5>
+                    <p class="text-sm text-gray-600 mb-4">Reset counter query user tanpa menghapus data lainnya.</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <button @click="resetUserQueries(selectedUser.user_id, 'hourly')" 
+                                class="py-2 px-4 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition">
+                            ⏰ Reset Hourly
+                        </button>
+                        <button @click="resetUserQueries(selectedUser.user_id, 'daily')" 
+                                class="py-2 px-4 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 transition">
+                            📅 Reset Daily
+                        </button>
+                        <button @click="resetUserQueries(selectedUser.user_id, 'monthly')" 
+                                class="py-2 px-4 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-100 transition">
+                            📆 Reset Monthly
+                        </button>
+                        <button @click="resetUserQueries(selectedUser.user_id, 'all')" 
+                                class="py-2 px-4 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition">
+                            🔄 Reset All
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Danger Zone -->
@@ -977,6 +1009,26 @@
                         this.showToast(`Data reset: ${result.deleted.transactions_deleted} transactions, ${result.deleted.subscriptions_deleted} subscriptions deleted`, 'success');
                         this.loadUsers(this.usersPagination.page);
                         this.showUserModal = false;
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async resetUserQueries(userId, resetType) {
+                    const typeLabels = {
+                        'hourly': 'hourly query counter',
+                        'daily': 'daily query counter',
+                        'monthly': 'monthly query counter',
+                        'all': 'all query counters'
+                    };
+                    if (!confirm(`Reset ${typeLabels[resetType]} for this user?`)) return;
+                    try {
+                        const result = await this.api(`/users/${userId}/reset-queries?reset_type=${resetType}`, { method: 'POST' });
+                        this.showToast(result.message, 'success');
+                        // Refresh user data
+                        const userData = await this.api(`/users/${userId}`);
+                        this.selectedUser = userData.user;
+                        this.loadUsers(this.usersPagination.page);
                     } catch (e) {
                         this.showToast(e.message, 'error');
                     }

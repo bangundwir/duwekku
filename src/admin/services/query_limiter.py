@@ -206,3 +206,57 @@ class QueryLimiter:
             "reset_minutes": user.get_reset_time_remaining(),
             "subscription_name": user.subscription_plan_name or "Free",
         }
+    
+    def reset_usage(self, user_id: int, reset_type: str = "all") -> dict:
+        """Reset user's query counters.
+        
+        Args:
+            user_id: The user ID
+            reset_type: Type of reset - "hourly", "daily", "monthly", or "all"
+        
+        Returns:
+            Dictionary with reset results
+        """
+        now = datetime.now().isoformat()
+        
+        with self.db._get_connection() as conn:
+            if reset_type == "hourly":
+                cursor = conn.execute(
+                    "UPDATE bot_users SET hourly_queries_used = 0, last_hourly_reset = ? WHERE user_id = ?",
+                    (now, user_id)
+                )
+            elif reset_type == "daily":
+                cursor = conn.execute(
+                    "UPDATE bot_users SET daily_queries_used = 0, last_query_reset = ? WHERE user_id = ?",
+                    (now, user_id)
+                )
+            elif reset_type == "monthly":
+                cursor = conn.execute(
+                    "UPDATE bot_users SET monthly_queries_used = 0, last_monthly_reset = ? WHERE user_id = ?",
+                    (now, user_id)
+                )
+            else:  # all
+                cursor = conn.execute(
+                    """
+                    UPDATE bot_users SET 
+                        hourly_queries_used = 0, 
+                        daily_queries_used = 0, 
+                        monthly_queries_used = 0,
+                        last_hourly_reset = ?,
+                        last_query_reset = ?,
+                        last_monthly_reset = ?
+                    WHERE user_id = ?
+                    """,
+                    (now, now, now, user_id)
+                )
+            conn.commit()
+            
+            if cursor.rowcount == 0:
+                return {"success": False, "message": "User not found"}
+        
+        return {
+            "success": True,
+            "message": f"Query counters reset ({reset_type})",
+            "reset_type": reset_type,
+            "reset_at": now,
+        }

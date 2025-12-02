@@ -41,6 +41,8 @@ class UserResponse(BaseModel):
     registered_at: str
     last_active: str
     is_blocked: bool
+    hourly_query_limit: int
+    hourly_queries_used: int
     daily_query_limit: int
     monthly_query_limit: int
     daily_queries_used: int
@@ -218,6 +220,8 @@ def create_admin_api(
                     registered_at=u.registered_at.isoformat(),
                     last_active=u.last_active.isoformat(),
                     is_blocked=u.is_blocked,
+                    hourly_query_limit=u.hourly_query_limit,
+                    hourly_queries_used=u.hourly_queries_used,
                     daily_query_limit=u.daily_query_limit,
                     monthly_query_limit=u.monthly_query_limit,
                     daily_queries_used=u.daily_queries_used,
@@ -251,6 +255,8 @@ def create_admin_api(
                 registered_at=user.registered_at.isoformat(),
                 last_active=user.last_active.isoformat(),
                 is_blocked=user.is_blocked,
+                hourly_query_limit=user.hourly_query_limit,
+                hourly_queries_used=user.hourly_queries_used,
                 daily_query_limit=user.daily_query_limit,
                 monthly_query_limit=user.monthly_query_limit,
                 daily_queries_used=user.daily_queries_used,
@@ -340,6 +346,27 @@ def create_admin_api(
         """Get user's usage statistics."""
         usage = query_limiter.get_usage(user_id)
         return UsageResponse(**usage)
+    
+    @app.post("/api/admin/users/{user_id}/reset-queries")
+    async def reset_user_queries(
+        user_id: int,
+        reset_type: str = "all",
+        session=Depends(get_current_admin),
+    ):
+        """Reset user's query counters.
+        
+        Args:
+            reset_type: Type of reset - "hourly", "daily", "monthly", or "all"
+        """
+        if reset_type not in ["hourly", "daily", "monthly", "all"]:
+            raise HTTPException(status_code=400, detail="Invalid reset_type. Use: hourly, daily, monthly, or all")
+        
+        result = query_limiter.reset_usage(user_id, reset_type)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=404, detail=result["message"])
+        
+        return result
     
     # ==================== Subscription Endpoints ====================
     
