@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, date
 from typing import Optional
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes
 
 from src.database.manager import DatabaseManager
@@ -160,6 +160,19 @@ makanan, transportasi, belanja, tagihan, hiburan, kesehatan, pendidikan
 gaji, bonus, freelance, investasi, hadiah
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+⌨️ *KEYBOARD:*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+/keyboard
+↳ Tampilkan keyboard shortcut
+
+/hide
+↳ Sembunyikan keyboard
+
+💡 Tekan tombol `⌨️ Hide` untuk menyembunyikan
+💡 Ketik /keyboard untuk menampilkan kembali
+
+━━━━━━━━━━━━━━━━━━━━━━━
 🤖 AI akan otomatis mendeteksi kategori dari pesan Anda!
 """
 
@@ -174,31 +187,60 @@ class CommandHandler:
         self.subscription_manager = subscription_manager
         self.financial_analyzer = financial_analyzer
 
+    def _get_main_keyboard(self) -> ReplyKeyboardMarkup:
+        """Get persistent main keyboard that appears at bottom of chat."""
+        keyboard = [
+            [
+                KeyboardButton("📋 History"),
+                KeyboardButton("📊 Summary"),
+                KeyboardButton("📅 Langganan"),
+            ],
+            [
+                KeyboardButton("📈 Analisis"),
+                KeyboardButton("📥 Export"),
+                KeyboardButton("⚙️ Settings"),
+            ],
+            [
+                KeyboardButton("➕ Catat"),
+                KeyboardButton("📖 Help"),
+                KeyboardButton("⌨️ Hide"),
+            ],
+        ]
+        return ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            is_persistent=False,  # Can be hidden
+        )
+
+    async def cmd_keyboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /keyboard command - show/hide keyboard."""
+        reply_keyboard = self._get_main_keyboard()
+        await update.message.reply_text(
+            "⌨️ Keyboard ditampilkan!",
+            reply_markup=reply_keyboard
+        )
+
+    async def cmd_hide(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /hide command - hide keyboard."""
+        from telegram import ReplyKeyboardRemove
+        await update.message.reply_text(
+            "⌨️ Keyboard disembunyikan.\n💡 Ketik /keyboard untuk menampilkan kembali.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
         user_name = update.effective_user.first_name or "User"
         message = WELCOME_MESSAGE.format(name=user_name)
 
-        # Quick action buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("📋 History", callback_data="history"),
-                InlineKeyboardButton("📊 Summary", callback_data="summary"),
-            ],
-            [
-                InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
-                InlineKeyboardButton("📈 Analisis", callback_data="show_analysis"),
-            ],
-            [
-                InlineKeyboardButton("📥 Export", callback_data="show_export"),
-                InlineKeyboardButton("🤖 AI Settings", callback_data="show_provider"),
-            ],
-            [InlineKeyboardButton("📖 Bantuan", callback_data="help")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Persistent keyboard at bottom
+        reply_keyboard = self._get_main_keyboard()
 
+        # Send welcome with keyboard
         await update.message.reply_text(
-            message, parse_mode="Markdown", reply_markup=reply_markup
+            message, 
+            parse_mode="Markdown", 
+            reply_markup=reply_keyboard
         )
 
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1751,61 +1793,50 @@ Pilih format export:
             await update.message.reply_text(
                 "📭 *BELUM ADA LANGGANAN*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "Tambahkan langganan pertama Anda!",
+                "Tambahkan langganan pertama Anda!\n\n"
+                "💡 Ketik: `langganan netflix 150rb 1 bulan`",
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )
             return
         
-        # Group by category
-        by_category = self.subscription_manager.get_by_category(user_id)
+        # Count by status
         cost_info = self.subscription_manager.get_monthly_cost(user_id)
-        expiring = self.subscription_manager.get_expiring_soon(user_id, days=7)
-        
-        def fmt(amount):
-            return f"Rp {amount:,.0f}".replace(",", ".")
+        active_count = len([s for s in subscriptions if s.status == "active"])
+        expiring_count = len([s for s in subscriptions if s.status == "expiring_soon"])
+        expired_count = len([s for s in subscriptions if s.status == "expired"])
         
         lines = [
             "📅 *DAFTAR LANGGANAN*",
             "━━━━━━━━━━━━━━━━━━━━━━━",
-            f"💰 Total Bulanan: *{fmt(cost_info['total'])}*",
-            f"📊 Jumlah: {cost_info['count']} langganan aktif",
+            f"💰 Total: *{SubscriptionFormatter.format_amount(cost_info['total'])}*/bulan",
+            f"✅ {active_count} aktif │ ⚠️ {expiring_count} segera │ ❌ {expired_count} expired",
+            "",
         ]
         
-        if expiring:
-            lines.append(f"⚠️ {len(expiring)} akan berakhir dalam 7 hari!")
+        # Sort: expiring soon first
+        sorted_subs = sorted(subscriptions, key=lambda x: (x.status != "expiring_soon", x.days_remaining))
         
-        lines.append("")
-        
-        # Category emoji
-        cat_emoji = {
-            "streaming": "🎬",
-            "hosting": "🖥️",
-            "domain": "🌐",
-            "software": "💿",
-            "other": "📦",
-        }
-        
-        status_emoji = {
-            "active": "✅",
-            "expiring_soon": "⚠️",
-            "expired": "❌",
-        }
-        
-        for category, subs in sorted(by_category.items()):
-            emoji = cat_emoji.get(category, "📦")
-            cat_total = sum(s.amount for s in subs if s.status != "expired")
+        for sub in sorted_subs[:10]:  # Limit to 10
+            # Calculate progress
+            total_days = (sub.end_date - sub.start_date).days
+            elapsed = (date.today() - sub.start_date).days
+            progress = min(100, max(0, (elapsed / total_days * 100) if total_days > 0 else 0))
             
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"{emoji} *{category.upper()}* ({fmt(cat_total)}/bln)")
+            status_emoji = SubscriptionFormatter.format_status_emoji(sub.status)
+            cat_emoji = SubscriptionFormatter.format_category_emoji(sub.category)
+            countdown = SubscriptionFormatter.format_countdown(sub.days_remaining)
+            progress_bar = SubscriptionFormatter.format_progress_emoji(progress)
+            
+            lines.append(f"{status_emoji} *{sub.name}* {cat_emoji}")
+            lines.append(f"   💵 {SubscriptionFormatter.format_amount(sub.amount)}")
+            lines.append(f"   ⏱️ {countdown}")
+            lines.append(f"   {progress_bar}")
+            lines.append(f"   🆔 `{sub.id}`")
             lines.append("")
-            
-            for sub in sorted(subs, key=lambda x: x.end_date):
-                s_emoji = status_emoji.get(sub.status, "📦")
-                days_text = f"{sub.days_remaining}d" if sub.days_remaining > 0 else "Expired"
-                lines.append(f"{s_emoji} *{sub.name}*")
-                lines.append(f"   💵 {fmt(sub.amount)} │ ⏳ {days_text} │ ID: `{sub.id}`")
-                lines.append("")
+        
+        if len(subscriptions) > 10:
+            lines.append(f"_...dan {len(subscriptions) - 10} lainnya_")
         
         # Action buttons
         keyboard = [
@@ -1814,7 +1845,12 @@ Pilih format export:
                 InlineKeyboardButton("💰 Biaya", callback_data="show_subcost"),
             ],
             [
-                InlineKeyboardButton("📥 Export", callback_data="export:html:all"),
+                InlineKeyboardButton("🗑️ Hapus", callback_data="show_delsub"),
+                InlineKeyboardButton("🔄 Perpanjang", callback_data="show_renewsub"),
+            ],
+            [
+                InlineKeyboardButton("📥 Export", callback_data="export_subs"),
+                InlineKeyboardButton("📊 Stats", callback_data="export_subs_enhanced"),
             ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)

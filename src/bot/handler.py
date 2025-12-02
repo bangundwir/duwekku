@@ -81,6 +81,10 @@ class BotHandler:
         self.app.add_handler(TelegramCommandHandler("renewsub", self.commands.cmd_renewsub))
         self.app.add_handler(TelegramCommandHandler("subcost", self.commands.cmd_subcost))
         
+        # Keyboard commands
+        self.app.add_handler(TelegramCommandHandler("keyboard", self.commands.cmd_keyboard))
+        self.app.add_handler(TelegramCommandHandler("hide", self.commands.cmd_hide))
+        
         # Callback handler for inline buttons
         self.app.add_handler(CallbackQueryHandler(self.commands.handle_callback))
         
@@ -102,6 +106,25 @@ class BotHandler:
         message_text = update.message.text.strip()
         
         if not message_text:
+            return
+        
+        # Handle keyboard button presses
+        keyboard_handlers = {
+            "📋 History": self.commands.cmd_history,
+            "📊 Summary": self.commands.cmd_summary,
+            "📅 Langganan": self.commands.cmd_subs,
+            "📈 Analisis": self.commands.cmd_analysis,
+            "📥 Export": self.commands.cmd_export,
+            "⚙️ Settings": self.commands.cmd_provider,
+            "📖 Help": self.commands.cmd_help,
+            "➕ Catat": self._show_add_transaction_help,
+            "⌨️ Hide": self.commands.cmd_hide,
+            "⌨️ Show": self.commands.cmd_keyboard,
+        }
+        
+        if message_text in keyboard_handlers:
+            handler = keyboard_handlers[message_text]
+            await handler(update, context)
             return
         
         # Show typing indicator
@@ -265,6 +288,33 @@ Coba ketik dengan format seperti ini:
             await update.message.reply_text(
                 "❌ Gagal menyimpan transaksi. Silakan coba lagi."
             )
+    
+    async def _show_add_transaction_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show help for adding transactions."""
+        message = """
+➕ *TAMBAH TRANSAKSI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Ketik transaksi dengan format natural:
+
+💸 *Pengeluaran:*
+• `beli makan 50rb`
+• `bayar listrik 500k`
+• `belanja bulanan 1.5jt`
+
+💰 *Pemasukan:*
+• `gajian 5jt`
+• `terima bonus 2jt`
+• `dapat freelance 1.5jt`
+
+📅 *Langganan:*
+• `langganan netflix 150rb 1 bulan`
+• `berlangganan spotify 60rb setahun`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 AI akan otomatis mendeteksi jenis dan kategori!
+"""
+        await update.message.reply_text(message, parse_mode="Markdown")
     
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors gracefully."""
