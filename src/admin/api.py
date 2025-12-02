@@ -284,6 +284,20 @@ def create_admin_api(
         
         return {"message": f"User {user_id} deleted"}
     
+    @app.post("/api/admin/users/{user_id}/reset")
+    async def reset_user_data(user_id: int, session=Depends(get_current_admin)):
+        """Reset user data (delete all transactions and subscriptions but keep account)."""
+        user = user_service.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        result = user_service.reset_user_data(user_id)
+        
+        return {
+            "message": f"User {user_id} data reset successfully",
+            "deleted": result,
+        }
+    
     # ==================== Query Limit Endpoints ====================
     
     @app.put("/api/admin/users/{user_id}/limits")

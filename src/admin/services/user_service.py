@@ -87,3 +87,7 @@ class UserService:
     def set_user_limits(self, user_id: int, daily_limit: int, monthly_limit: int) -> bool:
         """Set user's query limits."""
         return self.db.update_bot_user_limits(user_id, daily_limit, monthly_limit)
+    
+    def reset_user_data(self, user_id: int) -> dict:
+        """Reset user data (delete all transactions and subscriptions)."""
+        return self.db.reset_bot_user_data(user_id)

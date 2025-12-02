@@ -599,6 +599,47 @@ class SQLiteDB:
             conn.commit()
             return cursor.rowcount > 0
     
+    def reset_bot_user_data(self, user_id: int) -> dict:
+        """Reset user data (delete transactions, subscriptions) but keep user account."""
+        with self._get_connection() as conn:
+            # Count data before deletion
+            tx_count = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+            sub_count = conn.execute(
+                "SELECT COUNT(*) FROM subscriptions WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+            user_sub_count = conn.execute(
+                "SELECT COUNT(*) FROM user_subscriptions WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+            
+            # Delete transactions
+            conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+            # Delete subscriptions (service subscriptions)
+            conn.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+            # Delete user subscriptions (plan subscriptions)
+            conn.execute("DELETE FROM user_subscriptions WHERE user_id = ?", (user_id,))
+            
+            # Reset query counters
+            conn.execute(
+                """
+                UPDATE bot_users 
+                SET daily_queries_used = 0, 
+                    monthly_queries_used = 0, 
+                    total_queries = 0,
+                    subscription_plan_id = NULL
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            conn.commit()
+            
+            return {
+                "transactions_deleted": tx_count,
+                "subscriptions_deleted": sub_count,
+                "user_subscriptions_deleted": user_sub_count,
+            }
+    
     def get_bot_user_stats(self) -> dict:
         """Get bot user statistics."""
         with self._get_connection() as conn:
