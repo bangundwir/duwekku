@@ -211,11 +211,11 @@ class CommandHandler:
             [
                 KeyboardButton("📈 Analisis"),
                 KeyboardButton("📥 Export"),
-                KeyboardButton("⚙️ Settings"),
+                KeyboardButton("📊 Status"),
             ],
             [
                 KeyboardButton("➕ Catat"),
-                KeyboardButton("📖 Help"),
+                KeyboardButton("⚙️ Settings"),
                 KeyboardButton("⌨️ Hide"),
             ],
         ]
@@ -334,6 +334,10 @@ class CommandHandler:
             [
                 InlineKeyboardButton("📋 History", callback_data="history"),
                 InlineKeyboardButton("📊 Summary", callback_data="summary"),
+            ],
+            [
+                InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
+                InlineKeyboardButton("📈 Analisis", callback_data="show_analysis"),
             ],
             [
                 InlineKeyboardButton("🔄 Refresh", callback_data="refresh_status"),
@@ -567,6 +571,87 @@ Ketik transaksi seperti:
 
         elif query.data == "help":
             await self._safe_edit_message(query, HELP_MESSAGE)
+        
+        elif query.data == "refresh_status":
+            user_id = query.from_user.id
+            user = self.db.sqlite.get_bot_user(user_id)
+            
+            if not user:
+                await self._safe_edit_message(query, "❌ User tidak ditemukan.")
+                return
+            
+            # Subscription info
+            sub_name = user.subscription_plan_name or "Free"
+            sub_emoji = {"Free": "🆓", "Basic": "⭐", "Premium": "💎", "Pro": "👑"}.get(sub_name, "📦")
+            
+            # Calculate progress bars
+            def progress_bar(used, limit, length=10):
+                if limit == 0:
+                    return "░" * length
+                filled = int((used / limit) * length)
+                return "█" * filled + "░" * (length - filled)
+            
+            hourly_bar = progress_bar(user.hourly_queries_used, user.hourly_query_limit)
+            daily_bar = progress_bar(user.daily_queries_used, user.daily_query_limit)
+            monthly_bar = progress_bar(user.monthly_queries_used, user.monthly_query_limit)
+            
+            # Reset time
+            reset_mins = user.get_reset_time_remaining()
+            if reset_mins >= 60:
+                reset_text = f"{reset_mins // 60}j {reset_mins % 60}m"
+            else:
+                reset_text = f"{reset_mins}m"
+            
+            message = f"""
+📊 *STATUS AKUN ANDA*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+{sub_emoji} *Paket:* {sub_name}
+🆔 *User ID:* `{user.user_id}`
+📅 *Terdaftar:* {user.registered_at.strftime('%d %b %Y')}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📈 *PENGGUNAAN QUERY*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+⏰ *Per Jam:*
+{hourly_bar} `{user.hourly_queries_used}/{user.hourly_query_limit}`
+↳ Reset dalam: *{reset_text}*
+
+📅 *Harian:*
+{daily_bar} `{user.daily_queries_used}/{user.daily_query_limit}`
+↳ Reset: *Besok 00:00*
+
+📆 *Bulanan:*
+{monthly_bar} `{user.monthly_queries_used}/{user.monthly_query_limit}`
+↳ Reset: *Awal bulan depan*
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 *STATISTIK*
+━━━━━━━━━━━━━━━━━━━━━━━
+🔢 Total Query: *{user.total_queries}*
+⏱️ Terakhir Aktif: *{user.last_active.strftime('%d %b %Y %H:%M')}*
+🕐 Diperbarui: *{datetime.now().strftime('%H:%M:%S')}*
+
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Upgrade ke Premium untuk limit lebih tinggi!
+"""
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("📋 History", callback_data="history"),
+                    InlineKeyboardButton("📊 Summary", callback_data="summary"),
+                ],
+                [
+                    InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
+                    InlineKeyboardButton("📈 Analisis", callback_data="show_analysis"),
+                ],
+                [
+                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh_status"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await self._safe_edit_message(query, message, reply_markup=reply_markup)
         
         # Provider selection callbacks
         elif query.data.startswith("set_provider:"):

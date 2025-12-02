@@ -744,15 +744,27 @@ class SQLiteDB:
     def create_subscription_plan(self, plan: SubscriptionPlan) -> int:
         """Create a new subscription plan."""
         with self._get_connection() as conn:
+            # Add columns if they don't exist (migration)
+            try:
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN hourly_query_limit INTEGER DEFAULT 5")
+            except:
+                pass
+            try:
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN reset_hours INTEGER DEFAULT 1")
+            except:
+                pass
+            
             cursor = conn.execute(
                 """
-                INSERT INTO subscription_plans (name, daily_query_limit, monthly_query_limit, price, duration_days, features, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO subscription_plans (name, hourly_query_limit, daily_query_limit, monthly_query_limit, reset_hours, price, duration_days, features, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     plan.name,
+                    plan.hourly_query_limit,
                     plan.daily_query_limit,
                     plan.monthly_query_limit,
+                    plan.reset_hours,
                     plan.price,
                     plan.duration_days,
                     plan.to_dict()["features"],

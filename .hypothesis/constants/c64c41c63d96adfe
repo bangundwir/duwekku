@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\bot_user.py
+# hypothesis_version: 6.148.5
+
+[300, 'BotUser', 'daily_queries_used', 'daily_query_limit', 'first_name', 'hourly_queries_used', 'hourly_query_limit', 'is_blocked', 'last_active', 'last_hourly_reset', 'last_monthly_reset', 'last_query_reset', 'monthly_queries_used', 'monthly_query_limit', 'registered_at', 'reset_hours', 'subscription_plan_id', 'total_queries', 'user_id', 'username']

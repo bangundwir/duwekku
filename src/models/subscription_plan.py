@@ -14,6 +14,8 @@ class SubscriptionPlan:
     price: float                                    # Price in IDR
     duration_days: int                              # Plan duration in days
     id: Optional[int] = None
+    hourly_query_limit: int = 5                     # Queries per hour
+    reset_hours: int = 1                            # Hours until hourly reset
     features: List[str] = field(default_factory=list)  # List of features
     is_active: bool = True
     created_at: datetime = field(default_factory=datetime.now)
@@ -23,8 +25,10 @@ class SubscriptionPlan:
         return {
             "id": self.id,
             "name": self.name,
+            "hourly_query_limit": self.hourly_query_limit,
             "daily_query_limit": self.daily_query_limit,
             "monthly_query_limit": self.monthly_query_limit,
+            "reset_hours": self.reset_hours,
             "price": self.price,
             "duration_days": self.duration_days,
             "features": json.dumps(self.features) if self.features else "[]",
@@ -51,8 +55,10 @@ class SubscriptionPlan:
         return cls(
             id=data.get("id"),
             name=data["name"],
+            hourly_query_limit=data.get("hourly_query_limit", 5),
             daily_query_limit=data.get("daily_query_limit", 10),
             monthly_query_limit=data.get("monthly_query_limit", 300),
+            reset_hours=data.get("reset_hours", 1),
             price=float(data.get("price", 0)),
             duration_days=data.get("duration_days", 30),
             features=features if isinstance(features, list) else [],
@@ -81,34 +87,42 @@ class SubscriptionPlan:
 DEFAULT_PLANS = [
     SubscriptionPlan(
         name="Free",
+        hourly_query_limit=5,
         daily_query_limit=10,
         monthly_query_limit=100,
+        reset_hours=1,
         price=0,
         duration_days=0,  # Unlimited
-        features=["10 query/hari", "100 query/bulan", "Fitur dasar"],
+        features=["5 query/jam", "10 query/hari", "100 query/bulan", "Fitur dasar"],
     ),
     SubscriptionPlan(
         name="Basic",
+        hourly_query_limit=20,
         daily_query_limit=50,
         monthly_query_limit=500,
+        reset_hours=1,
         price=25000,
         duration_days=30,
-        features=["50 query/hari", "500 query/bulan", "Export CSV", "Analisis dasar"],
+        features=["20 query/jam", "50 query/hari", "500 query/bulan", "Export CSV", "Analisis dasar"],
     ),
     SubscriptionPlan(
         name="Premium",
+        hourly_query_limit=50,
         daily_query_limit=200,
         monthly_query_limit=2000,
+        reset_hours=1,
         price=75000,
         duration_days=30,
-        features=["200 query/hari", "2000 query/bulan", "Export CSV/Excel", "Analisis lengkap", "Priority support"],
+        features=["50 query/jam", "200 query/hari", "2000 query/bulan", "Export CSV/Excel", "Analisis lengkap", "Priority support"],
     ),
     SubscriptionPlan(
         name="Pro",
+        hourly_query_limit=200,
         daily_query_limit=1000,
         monthly_query_limit=10000,
+        reset_hours=1,
         price=150000,
         duration_days=30,
-        features=["1000 query/hari", "10000 query/bulan", "Semua fitur", "API access", "Priority support"],
+        features=["200 query/jam", "1000 query/hari", "10000 query/bulan", "Semua fitur", "API access", "Priority support"],
     ),
 ]

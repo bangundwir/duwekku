@@ -70,18 +70,22 @@ class AssignSubscriptionRequest(BaseModel):
 
 class CreatePlanRequest(BaseModel):
     name: str
-    daily_query_limit: int
-    monthly_query_limit: int
-    price: float
-    duration_days: int
+    hourly_query_limit: int = 5
+    daily_query_limit: int = 10
+    monthly_query_limit: int = 300
+    reset_hours: int = 1
+    price: float = 0
+    duration_days: int = 30
     features: List[str] = []
 
 
 class PlanResponse(BaseModel):
     id: int
     name: str
+    hourly_query_limit: int
     daily_query_limit: int
     monthly_query_limit: int
+    reset_hours: int
     price: float
     duration_days: int
     features: List[str]
@@ -346,8 +350,10 @@ def create_admin_api(
             PlanResponse(
                 id=p.id,
                 name=p.name,
+                hourly_query_limit=p.hourly_query_limit,
                 daily_query_limit=p.daily_query_limit,
                 monthly_query_limit=p.monthly_query_limit,
+                reset_hours=p.reset_hours,
                 price=p.price,
                 duration_days=p.duration_days,
                 features=p.features,
@@ -361,8 +367,10 @@ def create_admin_api(
         """Create a new subscription plan."""
         plan = subscription_service.create_plan(
             name=request.name,
+            hourly_query_limit=request.hourly_query_limit,
             daily_query_limit=request.daily_query_limit,
             monthly_query_limit=request.monthly_query_limit,
+            reset_hours=request.reset_hours,
             price=request.price,
             duration_days=request.duration_days,
             features=request.features,
@@ -371,8 +379,10 @@ def create_admin_api(
         return PlanResponse(
             id=plan.id,
             name=plan.name,
+            hourly_query_limit=plan.hourly_query_limit,
             daily_query_limit=plan.daily_query_limit,
             monthly_query_limit=plan.monthly_query_limit,
+            reset_hours=plan.reset_hours,
             price=plan.price,
             duration_days=plan.duration_days,
             features=plan.features,
@@ -386,8 +396,10 @@ def create_admin_api(
         if not subscription_service.update_plan(
             plan_id,
             name=request.name,
+            hourly_query_limit=request.hourly_query_limit,
             daily_query_limit=request.daily_query_limit,
             monthly_query_limit=request.monthly_query_limit,
+            reset_hours=request.reset_hours,
             price=request.price,
             duration_days=request.duration_days,
             features=json.dumps(request.features),

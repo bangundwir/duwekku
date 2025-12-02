@@ -345,6 +345,12 @@
                             <!-- Features List -->
                             <div class="p-5 space-y-3">
                                 <div class="flex items-center text-sm text-gray-600">
+                                    <svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span x-text="plan.hourly_query_limit + ' query/jam'"></span>
+                                </div>
+                                <div class="flex items-center text-sm text-gray-600">
                                     <svg class="w-4 h-4 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                     </svg>
@@ -355,6 +361,12 @@
                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                     </svg>
                                     <span x-text="plan.monthly_query_limit + ' query/bulan'"></span>
+                                </div>
+                                <div class="flex items-center text-sm text-gray-600">
+                                    <svg class="w-4 h-4 mr-2 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span x-text="'Reset setiap ' + plan.reset_hours + ' jam'"></span>
                                 </div>
                                 <template x-for="feature in (plan.features || [])" :key="feature">
                                     <div class="flex items-center text-sm text-gray-600">
@@ -397,8 +409,10 @@
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Daily Limit</th>
-                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Monthly Limit</th>
+                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">⏰ Hourly</th>
+                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">📊 Daily</th>
+                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">📆 Monthly</th>
+                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">🔄 Reset</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
@@ -414,8 +428,10 @@
                                             Rp <span x-text="formatNumber(plan.price)"></span>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-600" x-text="plan.duration_days + ' hari'"></td>
+                                        <td class="px-6 py-4 text-sm text-gray-600" x-text="plan.hourly_query_limit"></td>
                                         <td class="px-6 py-4 text-sm text-gray-600" x-text="plan.daily_query_limit"></td>
                                         <td class="px-6 py-4 text-sm text-gray-600" x-text="plan.monthly_query_limit"></td>
+                                        <td class="px-6 py-4 text-sm text-gray-600" x-text="plan.reset_hours + 'j'"></td>
                                         <td class="px-6 py-4">
                                             <span x-show="plan.is_active" class="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
                                             <span x-show="!plan.is_active" class="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Inactive</span>
@@ -447,32 +463,48 @@
                     <form @submit.prevent="createPlan()" class="space-y-4">
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📝 Plan Name</label>
                                 <input type="text" x-model="newPlan.name" required placeholder="e.g. Premium"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Price (Rp)</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">💰 Price (Rp)</label>
                                 <input type="number" x-model="newPlan.price" required placeholder="50000"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Duration (days)</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📅 Duration (days)</label>
                                 <input type="number" x-model="newPlan.duration_days" required placeholder="30"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Daily Query Limit</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">⏰ Hourly Query Limit</label>
+                                <input type="number" x-model="newPlan.hourly_query_limit" required placeholder="20" min="1"
+                                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">🔄 Reset Hours</label>
+                                <select x-model="newPlan.reset_hours" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                    <option value="1">1 Jam</option>
+                                    <option value="2">2 Jam</option>
+                                    <option value="3">3 Jam</option>
+                                    <option value="6">6 Jam</option>
+                                    <option value="12">12 Jam</option>
+                                    <option value="24">24 Jam</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📊 Daily Query Limit</label>
                                 <input type="number" x-model="newPlan.daily_query_limit" required placeholder="100"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Monthly Query Limit</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📆 Monthly Query Limit</label>
                                 <input type="number" x-model="newPlan.monthly_query_limit" required placeholder="1000"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Features (comma separated)</label>
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">✨ Features (comma separated)</label>
                                 <input type="text" x-model="newPlanFeaturesText" placeholder="Export CSV, Analisis dasar"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
@@ -636,18 +668,36 @@
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Daily Limit</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">⏰ Hourly Limit</label>
+                                <input type="number" x-model="editPlan.hourly_query_limit" required min="1"
+                                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">🔄 Reset Hours</label>
+                                <select x-model="editPlan.reset_hours" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                    <option value="1">1 Jam</option>
+                                    <option value="2">2 Jam</option>
+                                    <option value="3">3 Jam</option>
+                                    <option value="6">6 Jam</option>
+                                    <option value="12">12 Jam</option>
+                                    <option value="24">24 Jam</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📊 Daily Limit</label>
                                 <input type="number" x-model="editPlan.daily_query_limit" required
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Monthly Limit</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">📆 Monthly Limit</label>
                                 <input type="number" x-model="editPlan.monthly_query_limit" required
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Features (comma separated)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">✨ Features (comma separated)</label>
                             <input type="text" x-model="editPlanFeaturesText" placeholder="Export CSV, Analisis dasar"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                         </div>
@@ -716,8 +766,10 @@
                     name: '',
                     price: 0,
                     duration_days: 30,
+                    hourly_query_limit: 20,
                     daily_query_limit: 50,
                     monthly_query_limit: 500,
+                    reset_hours: 1,
                     features: []
                 },
                 editPlan: {
@@ -725,8 +777,10 @@
                     name: '',
                     price: 0,
                     duration_days: 30,
+                    hourly_query_limit: 20,
                     daily_query_limit: 50,
                     monthly_query_limit: 500,
+                    reset_hours: 1,
                     features: []
                 },
 
@@ -969,8 +1023,10 @@
                             name: '',
                             price: 0,
                             duration_days: 30,
+                            hourly_query_limit: 20,
                             daily_query_limit: 50,
                             monthly_query_limit: 500,
+                            reset_hours: 1,
                             features: []
                         };
                         this.newPlanFeaturesText = '';
@@ -985,8 +1041,10 @@
                         name: plan.name,
                         price: plan.price,
                         duration_days: plan.duration_days,
+                        hourly_query_limit: plan.hourly_query_limit || 20,
                         daily_query_limit: plan.daily_query_limit,
                         monthly_query_limit: plan.monthly_query_limit,
+                        reset_hours: plan.reset_hours || 1,
                         features: plan.features || []
                     };
                     this.editPlanFeaturesText = (plan.features || []).join(', ');

@@ -41,13 +41,17 @@ class SubscriptionService:
         monthly_query_limit: int,
         price: float,
         duration_days: int,
+        hourly_query_limit: int = 5,
+        reset_hours: int = 1,
         features: List[str] = None,
     ) -> SubscriptionPlan:
         """Create a new subscription plan."""
         plan = SubscriptionPlan(
             name=name,
+            hourly_query_limit=hourly_query_limit,
             daily_query_limit=daily_query_limit,
             monthly_query_limit=monthly_query_limit,
+            reset_hours=reset_hours,
             price=price,
             duration_days=duration_days,
             features=features or [],

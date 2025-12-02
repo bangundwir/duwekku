@@ -168,6 +168,7 @@ class BotHandler:
             "📅 Langganan": self.commands.cmd_subs,
             "📈 Analisis": self.commands.cmd_analysis,
             "📥 Export": self.commands.cmd_export,
+            "📊 Status": self.commands.cmd_status,
             "⚙️ Settings": self.commands.cmd_provider,
             "📖 Help": self.commands.cmd_help,
             "➕ Catat": self._show_add_transaction_help,

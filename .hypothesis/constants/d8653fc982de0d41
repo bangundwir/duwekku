@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\database\sqlite_db.py
+# hypothesis_version: 6.148.5
+
+[100, 10000, 99999, 100000, 999999, 'active_subscriptions', 'active_users', 'balance', 'blocked_users', 'count', 'date', 'expense', 'features', 'income', 'month', 'today_queries', 'total', 'total_transactions', 'total_users', 'transactions_deleted', 'year']
