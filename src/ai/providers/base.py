@@ -138,21 +138,27 @@ Balas HANYA dengan JSON valid tanpa penjelasan:
 Tanggal hari ini: {today}
 
 Ekstrak informasi berikut dari pesan pengguna:
-- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, dll) - capitalize dengan benar
-- amount: biaya dalam angka (konversi: rb/ribu=1000, jt/juta=1000000, k=1000)
+- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, OpenAI, ChatGPT, dll) - capitalize dengan benar
+- amount: biaya dalam angka (konversi: rb/ribu=1000, jt/juta=1000000, k=1000). Contoh: 20rb=20000, 50rb=50000, 1jt=1000000
 - category: kategori HARUS salah satu dari: streaming, hosting, domain, software, other
   * streaming: Netflix, Spotify, YouTube Premium, Disney+, HBO, Apple Music
   * hosting: VPS, Cloud, Server, DigitalOcean, AWS, Heroku
   * domain: Domain, Namecheap, GoDaddy
-  * software: Adobe, Microsoft 365, Canva, Figma, JetBrains
+  * software: Adobe, Microsoft 365, Canva, Figma, JetBrains, OpenAI, ChatGPT, GitHub Copilot
   * other: lainnya
 - duration_months: durasi dalam bulan (1 bulan=1, 1 tahun=12, setahun=12, sebulan=1)
-- start_date: tanggal mulai format YYYY-MM-DD. Jika tidak disebutkan gunakan null. Jika "hari ini" gunakan {today}. Konversi nama bulan Indonesia (januari=01, februari=02, maret=03, april=04, mei=05, juni=06, juli=07, agustus=08, september=09, oktober=10, november=11, december/desember=12)
+- start_date: tanggal mulai format YYYY-MM-DD. Jika tidak disebutkan gunakan null. Jika "hari ini" gunakan {today}. 
+  Konversi nama bulan Indonesia/Inggris ke angka:
+  januari/january=01, februari/february=02, maret/march=03, april=04, mei/may=05, juni/june=06, 
+  juli/july=07, agustus/august=08, september=09, oktober/october=10, november=11, desember/december=12
+  
+  Kata kunci tanggal: "mulai", "dimulai", "dari", "start", "sejak" menandakan start_date
 
 Contoh:
 - "langganan netflix 50rb 1 bulan" -> {{"name": "Netflix", "amount": 50000, "category": "streaming", "duration_months": 1, "start_date": null}}
 - "berlangganan spotify 60rb setahun mulai 1 januari 2025" -> {{"name": "Spotify", "amount": 60000, "category": "streaming", "duration_months": 12, "start_date": "2025-01-01"}}
-- "langganan youtube premium 80rb 3 bulan dimulai dari tanggal 15 december 2025" -> {{"name": "YouTube Premium", "amount": 80000, "category": "streaming", "duration_months": 3, "start_date": "2025-12-15"}}
+- "langganan openai 20rb 1 bulan dimulai 1 desember 2025" -> {{"name": "OpenAI", "amount": 20000, "category": "software", "duration_months": 1, "start_date": "2025-12-01"}}
+- "langganan chatgpt 300rb 1 bulan mulai hari ini" -> {{"name": "ChatGPT", "amount": 300000, "category": "software", "duration_months": 1, "start_date": "{today}"}}
 
 Pesan pengguna: "{message}"
 

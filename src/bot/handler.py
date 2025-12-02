@@ -131,7 +131,7 @@ class BotHandler:
         await update.message.chat.send_action("typing")
         
         # Check if it's a subscription message - expanded keywords
-        sub_keywords = ["langganan", "berlangganan", "subscribe", "subscription", "subs", "netflix", "spotify", "youtube premium", "disney", "hbo", "vps", "hosting", "domain"]
+        sub_keywords = ["langganan", "berlangganan", "subscribe", "subscription", "subs", "netflix", "spotify", "youtube premium", "disney", "hbo", "vps", "hosting", "domain", "openai", "chatgpt", "github copilot", "adobe", "canva", "figma"]
         msg_lower = message_text.lower()
         is_subscription = any(kw in msg_lower for kw in sub_keywords)
         
@@ -139,11 +139,15 @@ class BotHandler:
         duration_patterns = ["bulan", "tahun", "setahun", "sebulan", "minggu"]
         has_duration = any(p in msg_lower for p in duration_patterns)
         
+        logger.info(f"Message: {message_text}, is_subscription: {is_subscription}, has_duration: {has_duration}")
+        
         if is_subscription and has_duration and self.provider_manager and self.subscription_manager:
             # Parse as subscription
             parsed_sub = self.provider_manager.parse_subscription(user_id, message_text)
+            logger.info(f"Parsed subscription: {parsed_sub}")
             
             if parsed_sub and parsed_sub.is_valid():
+                logger.info(f"Subscription is valid: name={parsed_sub.name}, amount={parsed_sub.amount}, duration={parsed_sub.duration_months}, start_date={parsed_sub.start_date}")
                 from dateutil.relativedelta import relativedelta
                 from src.models.subscription import Subscription
                 
@@ -219,6 +223,21 @@ class BotHandler:
                     f"{tx_info}",
                     parse_mode="Markdown",
                     reply_markup=reply_markup
+                )
+                return
+            else:
+                # Subscription parsing failed - give helpful message
+                logger.warning(f"Subscription parsing failed for: {message_text}")
+                await update.message.reply_text(
+                    "⚠️ *Gagal memproses langganan*\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "Coba format seperti ini:\n"
+                    "• `langganan netflix 50rb 1 bulan`\n"
+                    "• `langganan openai 20rb 1 bulan mulai 1 desember 2025`\n"
+                    "• `berlangganan spotify 60rb setahun`\n\n"
+                    "Atau gunakan command:\n"
+                    "`/addsub OpenAI 20000 2025-12-01 2026-01-01 software`",
+                    parse_mode="Markdown"
                 )
                 return
         

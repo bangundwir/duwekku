@@ -74,16 +74,20 @@ class GroqProvider(AIProvider):
     def parse_subscription(self, message: str) -> Optional[ParsedSubscription]:
         """Parse natural language message into subscription data."""
         try:
+            prompt = self._build_subscription_prompt(message)
+            logger.info(f"Subscription prompt for: {message}")
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "user", "content": self._build_subscription_prompt(message)}
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
                 max_tokens=500,
             )
             
             content = response.choices[0].message.content
+            logger.info(f"AI subscription response: {content}")
             return self._parse_subscription_response(content)
             
         except Exception as e:
