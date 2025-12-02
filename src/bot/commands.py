@@ -259,6 +259,89 @@ class CommandHandler:
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command."""
         await update.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
+    
+    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /status command - show subscription and query status."""
+        user_id = update.effective_user.id
+        
+        # Get user from database
+        user = self.db.sqlite.get_bot_user(user_id)
+        
+        if not user:
+            await update.message.reply_text(
+                "❌ User tidak ditemukan. Silakan ketik /start terlebih dahulu.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Subscription info
+        sub_name = user.subscription_plan_name or "Free"
+        sub_emoji = {"Free": "🆓", "Basic": "⭐", "Premium": "💎", "Pro": "👑"}.get(sub_name, "📦")
+        
+        # Calculate progress bars
+        def progress_bar(used, limit, length=10):
+            if limit == 0:
+                return "░" * length
+            filled = int((used / limit) * length)
+            return "█" * filled + "░" * (length - filled)
+        
+        hourly_bar = progress_bar(user.hourly_queries_used, user.hourly_query_limit)
+        daily_bar = progress_bar(user.daily_queries_used, user.daily_query_limit)
+        monthly_bar = progress_bar(user.monthly_queries_used, user.monthly_query_limit)
+        
+        # Reset time
+        reset_mins = user.get_reset_time_remaining()
+        if reset_mins >= 60:
+            reset_text = f"{reset_mins // 60}j {reset_mins % 60}m"
+        else:
+            reset_text = f"{reset_mins}m"
+        
+        message = f"""
+📊 *STATUS AKUN ANDA*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+{sub_emoji} *Paket:* {sub_name}
+🆔 *User ID:* `{user.user_id}`
+📅 *Terdaftar:* {user.registered_at.strftime('%d %b %Y')}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📈 *PENGGUNAAN QUERY*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+⏰ *Per Jam:*
+{hourly_bar} `{user.hourly_queries_used}/{user.hourly_query_limit}`
+↳ Reset dalam: *{reset_text}*
+
+📅 *Harian:*
+{daily_bar} `{user.daily_queries_used}/{user.daily_query_limit}`
+↳ Reset: *Besok 00:00*
+
+📆 *Bulanan:*
+{monthly_bar} `{user.monthly_queries_used}/{user.monthly_query_limit}`
+↳ Reset: *Awal bulan depan*
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 *STATISTIK*
+━━━━━━━━━━━━━━━━━━━━━━━
+🔢 Total Query: *{user.total_queries}*
+⏱️ Terakhir Aktif: *{user.last_active.strftime('%d %b %Y %H:%M')}*
+
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Upgrade ke Premium untuk limit lebih tinggi!
+"""
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 History", callback_data="history"),
+                InlineKeyboardButton("📊 Summary", callback_data="summary"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Refresh", callback_data="refresh_status"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, parse_mode="Markdown", reply_markup=reply_markup)
 
     async def cmd_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /history command - show last 10 transactions."""

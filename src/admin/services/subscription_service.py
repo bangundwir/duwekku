@@ -60,6 +60,10 @@ class SubscriptionService:
         """Update a subscription plan."""
         return self.db.update_subscription_plan(plan_id, **kwargs)
     
+    def delete_plan(self, plan_id: int) -> bool:
+        """Delete a subscription plan."""
+        return self.db.delete_subscription_plan(plan_id)
+    
     def assign_subscription(
         self,
         user_id: int,

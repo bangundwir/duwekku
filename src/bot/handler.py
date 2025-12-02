@@ -63,6 +63,7 @@ class BotHandler:
         # Command handlers
         self.app.add_handler(TelegramCommandHandler("start", self.commands.cmd_start))
         self.app.add_handler(TelegramCommandHandler("help", self.commands.cmd_help))
+        self.app.add_handler(TelegramCommandHandler("status", self.commands.cmd_status))
         self.app.add_handler(TelegramCommandHandler("history", self.commands.cmd_history))
         self.app.add_handler(TelegramCommandHandler("summary", self.commands.cmd_summary))
         self.app.add_handler(TelegramCommandHandler("delete", self.commands.cmd_delete))
@@ -134,10 +135,28 @@ class BotHandler:
         # Check query limits
         limit_check = self.query_limiter.check_limit(user_id)
         if not limit_check["allowed"]:
+            reset_text = ""
+            if limit_check.get("reset_minutes", 0) > 0:
+                mins = limit_check["reset_minutes"]
+                if mins >= 60:
+                    reset_text = f"⏱️ Reset dalam: *{mins // 60} jam {mins % 60} menit*"
+                else:
+                    reset_text = f"⏱️ Reset dalam: *{mins} menit*"
+            
+            sub_name = limit_check.get("subscription_name", "Free")
+            sub_emoji = {"Free": "🆓", "Basic": "⭐", "Premium": "💎", "Pro": "👑"}.get(sub_name, "📦")
+            
             await update.message.reply_text(
-                f"⚠️ *Batas Query Tercapai*\n\n"
+                f"⚠️ *BATAS QUERY TERCAPAI*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"{limit_check['message']}\n\n"
-                f"💡 Upgrade ke paket premium untuk limit lebih tinggi.",
+                f"📊 *Status Penggunaan:*\n"
+                f"• Per Jam: `{limit_check.get('hourly_used', 0)}/{limit_check.get('hourly_limit', 5)}`\n"
+                f"• Harian: `{limit_check.get('daily_used', 0)}/{limit_check.get('daily_limit', 10)}`\n"
+                f"• Bulanan: `{limit_check.get('monthly_used', 0)}/{limit_check.get('monthly_limit', 300)}`\n\n"
+                f"{sub_emoji} *Paket:* {sub_name}\n"
+                f"{reset_text}\n\n"
+                f"💡 *Upgrade ke Premium untuk limit lebih tinggi!*",
                 parse_mode="Markdown"
             )
             return

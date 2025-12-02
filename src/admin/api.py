@@ -57,8 +57,10 @@ class PaginatedUsersResponse(BaseModel):
 
 
 class SetLimitsRequest(BaseModel):
-    daily_limit: int
-    monthly_limit: int
+    hourly_limit: int = 5
+    daily_limit: int = 10
+    monthly_limit: int = 300
+    reset_hours: int = 1
 
 
 class AssignSubscriptionRequest(BaseModel):
@@ -96,6 +98,9 @@ class StatsResponse(BaseModel):
 
 
 class UsageResponse(BaseModel):
+    hourly_used: int
+    hourly_limit: int
+    hourly_remaining: int
     daily_used: int
     daily_limit: int
     daily_remaining: int
@@ -307,13 +312,21 @@ def create_admin_api(
         session=Depends(get_current_admin),
     ):
         """Set user's query limits."""
-        if not query_limiter.set_limits(user_id, request.daily_limit, request.monthly_limit):
+        if not query_limiter.set_limits(
+            user_id, 
+            request.hourly_limit, 
+            request.daily_limit, 
+            request.monthly_limit,
+            request.reset_hours
+        ):
             raise HTTPException(status_code=404, detail="User not found")
         
         return {
             "message": "Limits updated",
+            "hourly_limit": request.hourly_limit,
             "daily_limit": request.daily_limit,
             "monthly_limit": request.monthly_limit,
+            "reset_hours": request.reset_hours,
         }
     
     @app.get("/api/admin/users/{user_id}/usage", response_model=UsageResponse)
@@ -365,6 +378,31 @@ def create_admin_api(
             features=plan.features,
             is_active=plan.is_active,
         )
+    
+    @app.put("/api/admin/plans/{plan_id}")
+    async def update_plan(plan_id: int, request: CreatePlanRequest, session=Depends(get_current_admin)):
+        """Update a subscription plan."""
+        import json
+        if not subscription_service.update_plan(
+            plan_id,
+            name=request.name,
+            daily_query_limit=request.daily_query_limit,
+            monthly_query_limit=request.monthly_query_limit,
+            price=request.price,
+            duration_days=request.duration_days,
+            features=json.dumps(request.features),
+        ):
+            raise HTTPException(status_code=404, detail="Plan not found")
+        
+        return {"message": f"Plan {plan_id} updated"}
+    
+    @app.delete("/api/admin/plans/{plan_id}")
+    async def delete_plan(plan_id: int, session=Depends(get_current_admin)):
+        """Delete a subscription plan."""
+        if not subscription_service.delete_plan(plan_id):
+            raise HTTPException(status_code=404, detail="Plan not found")
+        
+        return {"message": f"Plan {plan_id} deleted"}
     
     @app.put("/api/admin/users/{user_id}/subscription")
     async def assign_subscription(

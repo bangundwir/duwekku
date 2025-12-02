@@ -105,15 +105,42 @@ class SQLiteDB:
                     last_active TEXT DEFAULT CURRENT_TIMESTAMP,
                     is_blocked INTEGER DEFAULT 0,
                     subscription_plan_id INTEGER,
+                    subscription_plan_name TEXT DEFAULT 'Free',
+                    hourly_query_limit INTEGER DEFAULT 5,
                     daily_query_limit INTEGER DEFAULT 10,
                     monthly_query_limit INTEGER DEFAULT 300,
+                    hourly_queries_used INTEGER DEFAULT 0,
                     daily_queries_used INTEGER DEFAULT 0,
                     monthly_queries_used INTEGER DEFAULT 0,
                     total_queries INTEGER DEFAULT 0,
+                    last_hourly_reset TEXT,
                     last_query_reset TEXT,
-                    last_monthly_reset TEXT
+                    last_monthly_reset TEXT,
+                    reset_hours INTEGER DEFAULT 1
                 )
             """)
+            
+            # Add new columns if they don't exist (migration)
+            try:
+                conn.execute("ALTER TABLE bot_users ADD COLUMN hourly_query_limit INTEGER DEFAULT 5")
+            except:
+                pass
+            try:
+                conn.execute("ALTER TABLE bot_users ADD COLUMN hourly_queries_used INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                conn.execute("ALTER TABLE bot_users ADD COLUMN last_hourly_reset TEXT")
+            except:
+                pass
+            try:
+                conn.execute("ALTER TABLE bot_users ADD COLUMN reset_hours INTEGER DEFAULT 1")
+            except:
+                pass
+            try:
+                conn.execute("ALTER TABLE bot_users ADD COLUMN subscription_plan_name TEXT DEFAULT 'Free'")
+            except:
+                pass
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_users_username ON bot_users(username)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_users_registered ON bot_users(registered_at)")
             
@@ -772,6 +799,13 @@ class SQLiteDB:
                 f"UPDATE subscription_plans SET {', '.join(set_clauses)} WHERE id = ?",
                 values
             )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_subscription_plan(self, plan_id: int) -> bool:
+        """Delete a subscription plan."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM subscription_plans WHERE id = ?", (plan_id,))
             conn.commit()
             return cursor.rowcount > 0
     
