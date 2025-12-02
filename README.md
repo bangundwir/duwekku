@@ -188,3 +188,69 @@ DEFAULT_AI_PROVIDER=groq
 /models                 # Lihat model tersedia
 /model set gpt-4o       # Ganti model (Poe)
 ```
+
+
+## Admin Dashboard 🎛️
+
+Admin Dashboard adalah antarmuka web untuk mengelola bot dan user.
+
+### Fitur Admin Dashboard
+
+- 📊 **Dashboard**: Statistik user, subscription, dan query
+- 👥 **User Management**: Lihat, blokir, hapus user
+- 💳 **Subscription Plans**: Kelola paket langganan
+- 🔢 **Query Limits**: Atur batasan query per user
+- 📈 **Analytics**: Grafik penggunaan 30 hari terakhir
+
+### Menjalankan Admin Dashboard
+
+```bash
+# Install dependencies
+uv sync
+
+# Jalankan admin dashboard (port 8080)
+uv run python -m src.admin.server
+```
+
+Akses dashboard di: `http://localhost:8080`
+
+### Konfigurasi Admin
+
+Set environment variables di `.env`:
+
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_secure_password
+ADMIN_PORT=8080
+```
+
+### API Endpoints
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| POST | `/api/admin/login` | Login admin |
+| POST | `/api/admin/logout` | Logout admin |
+| GET | `/api/admin/users` | List users (paginated) |
+| GET | `/api/admin/users/{id}` | Detail user |
+| PUT | `/api/admin/users/{id}/block` | Blokir user |
+| PUT | `/api/admin/users/{id}/unblock` | Unblock user |
+| DELETE | `/api/admin/users/{id}` | Hapus user |
+| PUT | `/api/admin/users/{id}/limits` | Set query limits |
+| GET | `/api/admin/users/{id}/usage` | Get usage stats |
+| GET | `/api/admin/plans` | List subscription plans |
+| POST | `/api/admin/plans` | Create plan |
+| PUT | `/api/admin/users/{id}/subscription` | Assign subscription |
+| GET | `/api/admin/stats` | Dashboard statistics |
+| GET | `/api/admin/analytics/queries` | Query analytics |
+
+### Menjalankan Bot + Dashboard
+
+Jalankan di terminal terpisah:
+
+```bash
+# Terminal 1: Bot
+uv run python src/main.py
+
+# Terminal 2: Admin Dashboard
+uv run python -m src.admin.server
+```

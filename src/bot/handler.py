@@ -18,6 +18,8 @@ from src.database.manager import DatabaseManager
 from src.models.transaction import Transaction
 from src.subscription.manager import SubscriptionManager
 from src.analysis.analyzer import FinancialAnalyzer
+from src.admin.services.user_service import UserService
+from src.admin.services.query_limiter import QueryLimiter
 from .commands import CommandHandler
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,10 @@ class BotHandler:
         # Initialize subscription manager and financial analyzer
         self.subscription_manager = SubscriptionManager(db_manager)
         self.financial_analyzer = FinancialAnalyzer(db_manager, self.subscription_manager)
+        
+        # Initialize admin services
+        self.user_service = UserService(db_manager.sqlite)
+        self.query_limiter = QueryLimiter(db_manager.sqlite)
         
         self.commands = CommandHandler(
             db_manager, 
@@ -102,10 +108,38 @@ class BotHandler:
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming text messages for transaction/subscription parsing."""
-        user_id = update.effective_user.id
+        user = update.effective_user
+        user_id = user.id
         message_text = update.message.text.strip()
         
         if not message_text:
+            return
+        
+        # Register/update user in admin system
+        self.user_service.register_user(
+            user_id=user_id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        
+        # Check if user is blocked
+        if self.user_service.is_user_blocked(user_id):
+            await update.message.reply_text(
+                "🚫 *Akses Ditolak*\n\n"
+                "Akun Anda telah diblokir. Hubungi admin untuk informasi lebih lanjut.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Check query limits
+        limit_check = self.query_limiter.check_limit(user_id)
+        if not limit_check["allowed"]:
+            await update.message.reply_text(
+                f"⚠️ *Batas Query Tercapai*\n\n"
+                f"{limit_check['message']}\n\n"
+                f"💡 Upgrade ke paket premium untuk limit lebih tinggi.",
+                parse_mode="Markdown"
+            )
             return
         
         # Handle keyboard button presses
@@ -308,6 +342,9 @@ Coba ketik dengan format seperti ini:
         saved = self.db_manager.save_transaction(transaction)
         
         if saved:
+            # Increment query count
+            self.query_limiter.increment_usage(user_id)
+            
             type_text = "PEMASUKAN" if saved.type == "income" else "PENGELUARAN"
             type_emoji = "💰" if saved.type == "income" else "💸"
             sign = "+" if saved.type == "income" else "-"

@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\admin_session.py
+# hypothesis_version: 6.148.5
+
+['AdminSession', 'admin_username', 'created_at', 'expires_at', 'is_valid', 'token']

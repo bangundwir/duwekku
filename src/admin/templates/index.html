@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="id" x-data="dashboard()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Money Tracker Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Login Page -->
+    <div x-show="!isLoggedIn" x-cloak class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-purple-700">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+                <p class="text-gray-500 mt-2">Money Tracker Bot</p>
+            </div>
+            
+            <form @submit.prevent="login()">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Username</label>
+                    <input type="text" x-model="loginForm.username" 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="Enter username" required>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
+                    <input type="password" x-model="loginForm.password"
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="Enter password" required>
+                </div>
+                <div x-show="loginError" class="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm" x-text="loginError"></div>
+                <button type="submit" :disabled="isLoading"
+                        class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50">
+                    <span x-show="!isLoading">Login</span>
+                    <span x-show="isLoading">Loading...</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div x-show="isLoggedIn" x-cloak class="flex min-h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-gray-900 text-white fixed h-full">
+            <div class="p-6">
+                <h1 class="text-xl font-bold">💰 Money Tracker</h1>
+                <p class="text-gray-400 text-sm">Admin Dashboard</p>
+            </div>
+            <nav class="mt-6">
+                <a @click="currentPage = 'dashboard'" :class="{'bg-blue-600': currentPage === 'dashboard'}"
+                   class="flex items-center px-6 py-3 hover:bg-gray-800 cursor-pointer transition">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                    </svg>
+                    Dashboard
+                </a>
+                <a @click="currentPage = 'users'; loadUsers()" :class="{'bg-blue-600': currentPage === 'users'}"
+                   class="flex items-center px-6 py-3 hover:bg-gray-800 cursor-pointer transition">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    Users
+                </a>
+                <a @click="currentPage = 'subscriptions'; loadPlans()" :class="{'bg-blue-600': currentPage === 'subscriptions'}"
+                   class="flex items-center px-6 py-3 hover:bg-gray-800 cursor-pointer transition">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                    </svg>
+                    Subscriptions
+                </a>
+            </nav>
+            <div class="absolute bottom-0 w-full p-6">
+                <button @click="logout()" class="flex items-center text-gray-400 hover:text-white transition">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                    </svg>
+                    Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 ml-64 p-8">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-8">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800" x-text="pageTitle"></h2>
+                    <p class="text-gray-500" x-text="new Date().toLocaleDateString('id-ID', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'})"></p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">Welcome, <span class="font-medium" x-text="adminUsername"></span></span>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div x-show="currentPage === 'dashboard'">
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-sm">Total Users</p>
+                                <p class="text-3xl font-bold text-gray-800" x-text="stats.total_users || 0"></p>
+                            </div>
+                            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-sm">Active Users</p>
+                                <p class="text-3xl font-bold text-green-600" x-text="stats.active_users || 0"></p>
+                            </div>
+                            <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-sm">Active Subscriptions</p>
+                                <p class="text-3xl font-bold text-purple-600" x-text="stats.active_subscriptions || 0"></p>
+                            </div>
+                            <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-gray-500 text-sm">Today's Queries</p>
+                                <p class="text-3xl font-bold text-orange-600" x-text="stats.today_queries || 0"></p>
+                            </div>
+                            <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart -->
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Query Volume (30 Days)</h3>
+                    <canvas id="queryChart" height="100"></canvas>
+                </div>
+            </div>
+
+            <!-- Users Page -->
+            <div x-show="currentPage === 'users'">
+                <!-- Search and Actions -->
+                <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div class="relative flex-1 max-w-md">
+                            <input type="text" x-model="searchQuery" @input.debounce.300ms="loadUsers()"
+                                   placeholder="Search by username or ID..."
+                                   class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="text-gray-500 text-sm">
+                            Total: <span class="font-medium" x-text="usersPagination.total"></span> users
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Users Table -->
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queries</th>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <template x-for="user in users" :key="user.user_id">
+                                <tr class="hover:bg-gray-50 transition">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center">
+                                            <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                                                <span class="text-blue-600 font-medium" x-text="(user.username || user.first_name || 'U')[0].toUpperCase()"></span>
+                                            </div>
+                                            <div>
+                                                <p class="font-medium text-gray-800" x-text="user.username ? '@' + user.username : user.first_name || 'Unknown'"></p>
+                                                <p class="text-sm text-gray-500" x-text="user.first_name || ''"></p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-gray-600 font-mono text-sm" x-text="user.user_id"></td>
+                                    <td class="px-6 py-4 text-gray-600 text-sm" x-text="formatDate(user.registered_at)"></td>
+                                    <td class="px-6 py-4">
+                                        <div class="text-sm">
+                                            <span class="text-gray-800" x-text="user.daily_queries_used + '/' + user.daily_query_limit"></span>
+                                            <span class="text-gray-400"> daily</span>
+                                        </div>
+                                        <div class="text-xs text-gray-500" x-text="'Total: ' + user.total_queries"></div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span x-show="!user.is_blocked" class="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
+                                        <span x-show="user.is_blocked" class="px-3 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">Blocked</span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center space-x-2">
+                                            <button @click="openUserModal(user)" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="View Details">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                                </svg>
+                                            </button>
+                                            <button x-show="!user.is_blocked" @click="blockUser(user.user_id)" class="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition" title="Block">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                                                </svg>
+                                            </button>
+                                            <button x-show="user.is_blocked" @click="unblockUser(user.user_id)" class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Unblock">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                            </button>
+                                            <button @click="deleteUser(user.user_id)" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    
+                    <!-- Pagination -->
+                    <div class="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
+                        <div class="text-sm text-gray-500">
+                            Page <span x-text="usersPagination.page"></span> of <span x-text="usersPagination.total_pages"></span>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button @click="loadUsers(usersPagination.page - 1)" :disabled="usersPagination.page <= 1"
+                                    class="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                Previous
+                            </button>
+                            <button @click="loadUsers(usersPagination.page + 1)" :disabled="usersPagination.page >= usersPagination.total_pages"
+                                    class="px-4 py-2 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subscriptions Page -->
+            <div x-show="currentPage === 'subscriptions'">
+                <!-- Plans Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <template x-for="plan in plans" :key="plan.id">
+                        <div class="bg-white rounded-xl shadow-sm p-6 border-2 hover:border-blue-500 transition">
+                            <div class="flex justify-between items-start mb-4">
+                                <h3 class="text-lg font-bold text-gray-800" x-text="plan.name"></h3>
+                                <span x-show="plan.is_active" class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Active</span>
+                            </div>
+                            <div class="text-3xl font-bold text-blue-600 mb-4">
+                                Rp <span x-text="formatNumber(plan.price)"></span>
+                            </div>
+                            <div class="text-sm text-gray-500 mb-4" x-text="plan.duration_days + ' hari'"></div>
+                            <ul class="space-y-2 mb-6">
+                                <li class="flex items-center text-sm text-gray-600">
+                                    <svg class="w-4 h-4 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    <span x-text="plan.daily_query_limit + ' query/hari'"></span>
+                                </li>
+                                <li class="flex items-center text-sm text-gray-600">
+                                    <svg class="w-4 h-4 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    <span x-text="plan.monthly_query_limit + ' query/bulan'"></span>
+                                </li>
+                                <template x-for="feature in plan.features" :key="feature">
+                                    <li class="flex items-center text-sm text-gray-600">
+                                        <svg class="w-4 h-4 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                        <span x-text="feature"></span>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Create Plan Form -->
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Create New Plan</h3>
+                    <form @submit.prevent="createPlan()" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+                            <input type="text" x-model="newPlan.name" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Price (Rp)</label>
+                            <input type="number" x-model="newPlan.price" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Duration (days)</label>
+                            <input type="number" x-model="newPlan.duration_days" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Daily Query Limit</label>
+                            <input type="number" x-model="newPlan.daily_query_limit" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Monthly Query Limit</label>
+                            <input type="number" x-model="newPlan.monthly_query_limit" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div class="flex items-end">
+                            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition">
+                                Create Plan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div x-show="showUserModal" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.away="showUserModal = false">
+            <div class="p-6 border-b">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xl font-bold text-gray-800">User Details</h3>
+                    <button @click="showUserModal = false" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6" x-show="selectedUser">
+                <!-- User Info -->
+                <div class="flex items-center mb-6">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-2xl text-blue-600 font-bold" x-text="(selectedUser?.username || selectedUser?.first_name || 'U')[0].toUpperCase()"></span>
+                    </div>
+                    <div>
+                        <h4 class="text-xl font-bold text-gray-800" x-text="selectedUser?.username ? '@' + selectedUser.username : selectedUser?.first_name || 'Unknown'"></h4>
+                        <p class="text-gray-500">ID: <span x-text="selectedUser?.user_id"></span></p>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <p class="text-sm text-gray-500">Registered</p>
+                        <p class="font-medium" x-text="formatDate(selectedUser?.registered_at)"></p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <p class="text-sm text-gray-500">Last Active</p>
+                        <p class="font-medium" x-text="formatDate(selectedUser?.last_active)"></p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <p class="text-sm text-gray-500">Daily Queries</p>
+                        <p class="font-medium" x-text="selectedUser?.daily_queries_used + ' / ' + selectedUser?.daily_query_limit"></p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <p class="text-sm text-gray-500">Monthly Queries</p>
+                        <p class="font-medium" x-text="selectedUser?.monthly_queries_used + ' / ' + selectedUser?.monthly_query_limit"></p>
+                    </div>
+                </div>
+
+                <!-- Set Limits Form -->
+                <div class="border-t pt-6 mb-6">
+                    <h5 class="font-semibold text-gray-800 mb-4">Set Query Limits</h5>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Daily Limit</label>
+                            <input type="number" x-model="limitForm.daily_limit"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Monthly Limit</label>
+                            <input type="number" x-model="limitForm.monthly_limit"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <button @click="setUserLimits()" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition">
+                        Update Limits
+                    </button>
+                </div>
+
+                <!-- Assign Subscription -->
+                <div class="border-t pt-6">
+                    <h5 class="font-semibold text-gray-800 mb-4">Assign Subscription</h5>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Plan</label>
+                            <select x-model="subscriptionForm.plan_id"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select Plan</option>
+                                <template x-for="plan in plans" :key="plan.id">
+                                    <option :value="plan.id" x-text="plan.name + ' - Rp ' + formatNumber(plan.price)"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">Duration (days, optional)</label>
+                            <input type="number" x-model="subscriptionForm.duration_days" placeholder="Use plan default"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <button @click="assignSubscription()" class="mt-4 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition">
+                        Assign Subscription
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-cloak
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-2"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-y-0"
+         x-transition:leave-end="opacity-0 transform translate-y-2"
+         :class="toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'"
+         class="fixed bottom-4 right-4 text-white px-6 py-3 rounded-lg shadow-lg z-50">
+        <span x-text="toast.message"></span>
+    </div>
+
+    <script>
+        function dashboard() {
+            return {
+                // Auth state
+                isLoggedIn: false,
+                token: localStorage.getItem('admin_token') || '',
+                adminUsername: localStorage.getItem('admin_username') || '',
+                loginForm: { username: '', password: '' },
+                loginError: '',
+                isLoading: false,
+
+                // Navigation
+                currentPage: 'dashboard',
+
+                // Data
+                stats: {},
+                users: [],
+                plans: [],
+                usersPagination: { page: 1, per_page: 20, total: 0, total_pages: 1 },
+                searchQuery: '',
+
+                // Modals
+                showUserModal: false,
+                selectedUser: null,
+
+                // Forms
+                limitForm: { daily_limit: 10, monthly_limit: 300 },
+                subscriptionForm: { plan_id: '', duration_days: '' },
+                newPlan: {
+                    name: '',
+                    price: 0,
+                    duration_days: 30,
+                    daily_query_limit: 50,
+                    monthly_query_limit: 500,
+                    features: []
+                },
+
+                // Toast
+                toast: { show: false, message: '', type: 'success' },
+
+                // Computed
+                get pageTitle() {
+                    const titles = {
+                        dashboard: 'Dashboard',
+                        users: 'User Management',
+                        subscriptions: 'Subscription Plans'
+                    };
+                    return titles[this.currentPage] || 'Dashboard';
+                },
+
+                // Init
+                async init() {
+                    if (this.token) {
+                        try {
+                            await this.checkSession();
+                            this.isLoggedIn = true;
+                            this.loadStats();
+                            this.loadAnalytics();
+                        } catch (e) {
+                            this.logout();
+                        }
+                    }
+                },
+
+                // API helpers
+                async api(endpoint, options = {}) {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (this.token) {
+                        headers['Authorization'] = `Bearer ${this.token}`;
+                    }
+                    const response = await fetch(`/api/admin${endpoint}`, {
+                        ...options,
+                        headers: { ...headers, ...options.headers }
+                    });
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'API Error');
+                    }
+                    return response.json();
+                },
+
+                // Auth methods
+                async login() {
+                    this.isLoading = true;
+                    this.loginError = '';
+                    try {
+                        const data = await this.api('/login', {
+                            method: 'POST',
+                            body: JSON.stringify(this.loginForm)
+                        });
+                        this.token = data.token;
+                        this.adminUsername = data.username;
+                        localStorage.setItem('admin_token', data.token);
+                        localStorage.setItem('admin_username', data.username);
+                        this.isLoggedIn = true;
+                        this.loadStats();
+                        this.loadAnalytics();
+                        this.showToast('Login successful', 'success');
+                    } catch (e) {
+                        this.loginError = e.message;
+                    }
+                    this.isLoading = false;
+                },
+
+                async logout() {
+                    try {
+                        await this.api('/logout', { method: 'POST' });
+                    } catch (e) {}
+                    this.token = '';
+                    this.adminUsername = '';
+                    localStorage.removeItem('admin_token');
+                    localStorage.removeItem('admin_username');
+                    this.isLoggedIn = false;
+                },
+
+                async checkSession() {
+                    return this.api('/session');
+                },
+
+                // Data loading
+                async loadStats() {
+                    try {
+                        this.stats = await this.api('/stats');
+                    } catch (e) {
+                        console.error('Failed to load stats:', e);
+                    }
+                },
+
+                async loadAnalytics() {
+                    try {
+                        const data = await this.api('/analytics/queries?days=30');
+                        this.renderChart(data.data);
+                    } catch (e) {
+                        console.error('Failed to load analytics:', e);
+                    }
+                },
+
+                async loadUsers(page = 1) {
+                    try {
+                        const params = new URLSearchParams({
+                            page: page,
+                            per_page: 20,
+                            ...(this.searchQuery && { search: this.searchQuery })
+                        });
+                        const data = await this.api(`/users?${params}`);
+                        this.users = data.items;
+                        this.usersPagination = {
+                            page: data.page,
+                            per_page: data.per_page,
+                            total: data.total,
+                            total_pages: data.total_pages
+                        };
+                    } catch (e) {
+                        console.error('Failed to load users:', e);
+                    }
+                },
+
+                async loadPlans() {
+                    try {
+                        this.plans = await this.api('/plans');
+                    } catch (e) {
+                        console.error('Failed to load plans:', e);
+                    }
+                },
+
+                // User actions
+                async blockUser(userId) {
+                    if (!confirm('Block this user?')) return;
+                    try {
+                        await this.api(`/users/${userId}/block`, { method: 'PUT' });
+                        this.showToast('User blocked', 'success');
+                        this.loadUsers(this.usersPagination.page);
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async unblockUser(userId) {
+                    try {
+                        await this.api(`/users/${userId}/unblock`, { method: 'PUT' });
+                        this.showToast('User unblocked', 'success');
+                        this.loadUsers(this.usersPagination.page);
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async deleteUser(userId) {
+                    if (!confirm('Delete this user? This action cannot be undone.')) return;
+                    try {
+                        await this.api(`/users/${userId}`, { method: 'DELETE' });
+                        this.showToast('User deleted', 'success');
+                        this.loadUsers(this.usersPagination.page);
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                openUserModal(user) {
+                    this.selectedUser = user;
+                    this.limitForm.daily_limit = user.daily_query_limit;
+                    this.limitForm.monthly_limit = user.monthly_query_limit;
+                    this.subscriptionForm = { plan_id: '', duration_days: '' };
+                    this.showUserModal = true;
+                },
+
+                async setUserLimits() {
+                    try {
+                        await this.api(`/users/${this.selectedUser.user_id}/limits`, {
+                            method: 'PUT',
+                            body: JSON.stringify(this.limitForm)
+                        });
+                        this.showToast('Limits updated', 'success');
+                        this.loadUsers(this.usersPagination.page);
+                        this.showUserModal = false;
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async assignSubscription() {
+                    if (!this.subscriptionForm.plan_id) {
+                        this.showToast('Please select a plan', 'error');
+                        return;
+                    }
+                    try {
+                        const body = { plan_id: parseInt(this.subscriptionForm.plan_id) };
+                        if (this.subscriptionForm.duration_days) {
+                            body.duration_days = parseInt(this.subscriptionForm.duration_days);
+                        }
+                        await this.api(`/users/${this.selectedUser.user_id}/subscription`, {
+                            method: 'PUT',
+                            body: JSON.stringify(body)
+                        });
+                        this.showToast('Subscription assigned', 'success');
+                        this.loadUsers(this.usersPagination.page);
+                        this.showUserModal = false;
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async createPlan() {
+                    try {
+                        await this.api('/plans', {
+                            method: 'POST',
+                            body: JSON.stringify(this.newPlan)
+                        });
+                        this.showToast('Plan created', 'success');
+                        this.loadPlans();
+                        this.newPlan = {
+                            name: '',
+                            price: 0,
+                            duration_days: 30,
+                            daily_query_limit: 50,
+                            monthly_query_limit: 500,
+                            features: []
+                        };
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                // Helpers
+                formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    return new Date(dateStr).toLocaleDateString('id-ID', {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                    });
+                },
+
+                formatNumber(num) {
+                    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                },
+
+                showToast(message, type = 'success') {
+                    this.toast = { show: true, message, type };
+                    setTimeout(() => { this.toast.show = false; }, 3000);
+                },
+
+                renderChart(data) {
+                    const ctx = document.getElementById('queryChart');
+                    if (!ctx) return;
+                    
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(d => d.date),
+                            datasets: [{
+                                label: 'Queries',
+                                data: data.map(d => d.count),
+                                borderColor: 'rgb(59, 130, 246)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: true,
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                y: { beginAtZero: true }
+                            }
+                        }
+                    });
+                }
+            };
+        }
+    </script>
+</body>
+</html>

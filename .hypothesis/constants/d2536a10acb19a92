@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\user_subscription.py
+# hypothesis_version: 6.148.5
+
+['Unknown', 'UserSubscription', 'active', 'assigned_at', 'assigned_by', 'end_date', 'expired', 'id', 'plan_id', 'plan_name', 'start_date', 'status', 'system', 'user_id']

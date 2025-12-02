@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\subscription_plan.py
+# hypothesis_version: 6.148.5
+
+[100, 200, 300, 365, 500, 1000, 2000, 10000, 25000, 75000, 150000, ',', '.', '1 bulan', '1 tahun', '10 query/hari', '100 query/bulan', '1000 query/hari', '10000 query/bulan', '200 query/hari', '2000 query/bulan', '50 query/hari', '500 query/bulan', 'API access', 'Analisis dasar', 'Analisis lengkap', 'Basic', 'Export CSV', 'Export CSV/Excel', 'Fitur dasar', 'Free', 'Premium', 'Priority support', 'Pro', 'Semua fitur', 'SubscriptionPlan', '[]', 'created_at', 'daily_query_limit', 'duration_days', 'features', 'id', 'is_active', 'monthly_query_limit', 'name', 'price']

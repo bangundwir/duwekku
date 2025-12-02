@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # SQLite
     sqlite_path: str = "data/money_tracker.db"
     
+    # Admin Dashboard
+    admin_username: str = "admin"
+    admin_password: str = "admin123"
+    admin_port: int = 8080
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

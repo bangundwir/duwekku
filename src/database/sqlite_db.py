@@ -8,6 +8,10 @@ from typing import Optional
 from src.models.transaction import Transaction
 from src.models.user_preference import UserPreference
 from src.models.subscription import Subscription
+from src.models.bot_user import BotUser
+from src.models.subscription_plan import SubscriptionPlan
+from src.models.user_subscription import UserSubscription
+from src.models.admin_session import AdminSession
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,75 @@ class SQLiteDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_user_id ON subscriptions(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_end_date ON subscriptions(end_date)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_category ON subscriptions(category)")
+            
+            # Bot users table (for admin dashboard)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS bot_users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    registered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    last_active TEXT DEFAULT CURRENT_TIMESTAMP,
+                    is_blocked INTEGER DEFAULT 0,
+                    subscription_plan_id INTEGER,
+                    daily_query_limit INTEGER DEFAULT 10,
+                    monthly_query_limit INTEGER DEFAULT 300,
+                    daily_queries_used INTEGER DEFAULT 0,
+                    monthly_queries_used INTEGER DEFAULT 0,
+                    total_queries INTEGER DEFAULT 0,
+                    last_query_reset TEXT,
+                    last_monthly_reset TEXT
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_users_username ON bot_users(username)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_bot_users_registered ON bot_users(registered_at)")
+            
+            # Subscription plans table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS subscription_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    daily_query_limit INTEGER DEFAULT 10,
+                    monthly_query_limit INTEGER DEFAULT 300,
+                    price REAL DEFAULT 0,
+                    duration_days INTEGER DEFAULT 30,
+                    features TEXT DEFAULT '[]',
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # User subscriptions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    plan_id INTEGER NOT NULL,
+                    plan_name TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    status TEXT DEFAULT 'active',
+                    assigned_by TEXT DEFAULT 'system',
+                    assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES bot_users(user_id),
+                    FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_subs_user ON user_subscriptions(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_subs_status ON user_subscriptions(status)")
+            
+            # Admin sessions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS admin_sessions (
+                    token TEXT PRIMARY KEY,
+                    admin_username TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TEXT NOT NULL,
+                    is_valid INTEGER DEFAULT 1
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)")
+            
             conn.commit()
 
     
@@ -416,3 +489,436 @@ class SQLiteDB:
             )
             rows = cursor.fetchall()
             return [Subscription.from_dict(dict(row)) for row in rows]
+
+    # ==================== Bot User Methods ====================
+    
+    def register_bot_user(self, user_id: int, username: Optional[str] = None, first_name: Optional[str] = None) -> BotUser:
+        """Register or update a bot user."""
+        with self._get_connection() as conn:
+            now = datetime.now().isoformat()
+            conn.execute(
+                """
+                INSERT INTO bot_users (user_id, username, first_name, registered_at, last_active)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username = COALESCE(excluded.username, bot_users.username),
+                    first_name = COALESCE(excluded.first_name, bot_users.first_name),
+                    last_active = excluded.last_active
+                """,
+                (user_id, username, first_name, now, now)
+            )
+            conn.commit()
+        return self.get_bot_user(user_id)
+    
+    def get_bot_user(self, user_id: int) -> Optional[BotUser]:
+        """Get a bot user by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM bot_users WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return BotUser.from_dict(dict(row))
+            return None
+    
+    def get_all_bot_users(self, page: int = 1, per_page: int = 20, search: Optional[str] = None) -> tuple[list[BotUser], int]:
+        """Get paginated list of bot users with optional search."""
+        offset = (page - 1) * per_page
+        
+        with self._get_connection() as conn:
+            if search:
+                search_pattern = f"%{search}%"
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM bot_users 
+                    WHERE username LIKE ? OR first_name LIKE ? OR CAST(user_id AS TEXT) LIKE ?
+                    ORDER BY registered_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (search_pattern, search_pattern, search_pattern, per_page, offset)
+                )
+                count_cursor = conn.execute(
+                    """
+                    SELECT COUNT(*) FROM bot_users 
+                    WHERE username LIKE ? OR first_name LIKE ? OR CAST(user_id AS TEXT) LIKE ?
+                    """,
+                    (search_pattern, search_pattern, search_pattern)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM bot_users ORDER BY registered_at DESC LIMIT ? OFFSET ?",
+                    (per_page, offset)
+                )
+                count_cursor = conn.execute("SELECT COUNT(*) FROM bot_users")
+            
+            rows = cursor.fetchall()
+            total = count_cursor.fetchone()[0]
+            
+            return [BotUser.from_dict(dict(row)) for row in rows], total
+    
+    def update_bot_user_activity(self, user_id: int) -> None:
+        """Update user's last active timestamp."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE bot_users SET last_active = ? WHERE user_id = ?",
+                (datetime.now().isoformat(), user_id)
+            )
+            conn.commit()
+    
+    def block_bot_user(self, user_id: int) -> bool:
+        """Block a bot user."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE bot_users SET is_blocked = 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def unblock_bot_user(self, user_id: int) -> bool:
+        """Unblock a bot user."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE bot_users SET is_blocked = 0 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_bot_user(self, user_id: int) -> bool:
+        """Delete a bot user and all related data."""
+        with self._get_connection() as conn:
+            # Delete user subscriptions
+            conn.execute("DELETE FROM user_subscriptions WHERE user_id = ?", (user_id,))
+            # Delete transactions
+            conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+            # Delete subscriptions (service subscriptions)
+            conn.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+            # Delete user preferences
+            conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
+            # Delete bot user
+            cursor = conn.execute("DELETE FROM bot_users WHERE user_id = ?", (user_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_bot_user_stats(self) -> dict:
+        """Get bot user statistics."""
+        with self._get_connection() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM bot_users").fetchone()[0]
+            active = conn.execute(
+                "SELECT COUNT(*) FROM bot_users WHERE is_blocked = 0"
+            ).fetchone()[0]
+            blocked = conn.execute(
+                "SELECT COUNT(*) FROM bot_users WHERE is_blocked = 1"
+            ).fetchone()[0]
+            
+            return {
+                "total_users": total,
+                "active_users": active,
+                "blocked_users": blocked,
+            }
+    
+    def update_bot_user_limits(self, user_id: int, daily_limit: int, monthly_limit: int) -> bool:
+        """Update user's query limits."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE bot_users 
+                SET daily_query_limit = ?, monthly_query_limit = ?
+                WHERE user_id = ?
+                """,
+                (daily_limit, monthly_limit, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def increment_user_query_count(self, user_id: int) -> None:
+        """Increment user's query counters."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE bot_users 
+                SET daily_queries_used = daily_queries_used + 1,
+                    monthly_queries_used = monthly_queries_used + 1,
+                    total_queries = total_queries + 1
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            conn.commit()
+    
+    def reset_daily_query_counts(self) -> int:
+        """Reset daily query counts for all users. Returns number of users reset."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE bot_users 
+                SET daily_queries_used = 0, last_query_reset = ?
+                """,
+                (datetime.now().isoformat(),)
+            )
+            conn.commit()
+            return cursor.rowcount
+    
+    def reset_monthly_query_counts(self) -> int:
+        """Reset monthly query counts for all users. Returns number of users reset."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE bot_users 
+                SET monthly_queries_used = 0, last_monthly_reset = ?
+                """,
+                (datetime.now().isoformat(),)
+            )
+            conn.commit()
+            return cursor.rowcount
+    
+    # ==================== Subscription Plan Methods ====================
+    
+    def create_subscription_plan(self, plan: SubscriptionPlan) -> int:
+        """Create a new subscription plan."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO subscription_plans (name, daily_query_limit, monthly_query_limit, price, duration_days, features, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plan.name,
+                    plan.daily_query_limit,
+                    plan.monthly_query_limit,
+                    plan.price,
+                    plan.duration_days,
+                    plan.to_dict()["features"],
+                    1 if plan.is_active else 0,
+                    plan.created_at.isoformat(),
+                )
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_subscription_plan(self, plan_id: int) -> Optional[SubscriptionPlan]:
+        """Get a subscription plan by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM subscription_plans WHERE id = ?", (plan_id,))
+            row = cursor.fetchone()
+            if row:
+                return SubscriptionPlan.from_dict(dict(row))
+            return None
+    
+    def get_all_subscription_plans(self, active_only: bool = True) -> list[SubscriptionPlan]:
+        """Get all subscription plans."""
+        with self._get_connection() as conn:
+            if active_only:
+                cursor = conn.execute("SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY price ASC")
+            else:
+                cursor = conn.execute("SELECT * FROM subscription_plans ORDER BY price ASC")
+            rows = cursor.fetchall()
+            return [SubscriptionPlan.from_dict(dict(row)) for row in rows]
+    
+    def update_subscription_plan(self, plan_id: int, **kwargs) -> bool:
+        """Update a subscription plan."""
+        if not kwargs:
+            return False
+        
+        set_clauses = []
+        values = []
+        for key, value in kwargs.items():
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+        values.append(plan_id)
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE subscription_plans SET {', '.join(set_clauses)} WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    # ==================== User Subscription Methods ====================
+    
+    def assign_user_subscription(self, subscription: UserSubscription) -> int:
+        """Assign a subscription to a user."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO user_subscriptions (user_id, plan_id, plan_name, start_date, end_date, status, assigned_by, assigned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    subscription.user_id,
+                    subscription.plan_id,
+                    subscription.plan_name,
+                    subscription.start_date.isoformat(),
+                    subscription.end_date.isoformat(),
+                    subscription.status,
+                    subscription.assigned_by,
+                    subscription.assigned_at.isoformat(),
+                )
+            )
+            # Update user's subscription plan ID
+            conn.execute(
+                "UPDATE bot_users SET subscription_plan_id = ? WHERE user_id = ?",
+                (subscription.plan_id, subscription.user_id)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_user_subscription(self, user_id: int) -> Optional[UserSubscription]:
+        """Get user's current active subscription."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM user_subscriptions 
+                WHERE user_id = ? AND status = 'active'
+                ORDER BY end_date DESC LIMIT 1
+                """,
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserSubscription.from_dict(dict(row))
+            return None
+    
+    def get_user_subscription_history(self, user_id: int) -> list[UserSubscription]:
+        """Get user's subscription history."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM user_subscriptions WHERE user_id = ? ORDER BY assigned_at DESC",
+                (user_id,)
+            )
+            rows = cursor.fetchall()
+            return [UserSubscription.from_dict(dict(row)) for row in rows]
+    
+    def expire_user_subscriptions(self) -> int:
+        """Mark expired subscriptions. Returns count of expired."""
+        from datetime import date
+        today = date.today().isoformat()
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE user_subscriptions 
+                SET status = 'expired'
+                WHERE status = 'active' AND end_date < ?
+                """,
+                (today,)
+            )
+            conn.commit()
+            return cursor.rowcount
+    
+    def get_active_subscriptions_count(self) -> int:
+        """Get count of active subscriptions."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM user_subscriptions WHERE status = 'active'"
+            )
+            return cursor.fetchone()[0]
+    
+    # ==================== Admin Session Methods ====================
+    
+    def create_admin_session(self, session: AdminSession) -> str:
+        """Create a new admin session."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO admin_sessions (token, admin_username, created_at, expires_at, is_valid)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    session.token,
+                    session.admin_username,
+                    session.created_at.isoformat(),
+                    session.expires_at.isoformat(),
+                    1 if session.is_valid else 0,
+                )
+            )
+            conn.commit()
+            return session.token
+    
+    def get_admin_session(self, token: str) -> Optional[AdminSession]:
+        """Get an admin session by token."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM admin_sessions WHERE token = ?", (token,))
+            row = cursor.fetchone()
+            if row:
+                return AdminSession.from_dict(dict(row))
+            return None
+    
+    def invalidate_admin_session(self, token: str) -> bool:
+        """Invalidate an admin session."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE admin_sessions SET is_valid = 0 WHERE token = ?",
+                (token,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def refresh_admin_session(self, token: str, new_expires_at: datetime) -> bool:
+        """Refresh an admin session's expiration time."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE admin_sessions SET expires_at = ? WHERE token = ? AND is_valid = 1",
+                (new_expires_at.isoformat(), token)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def cleanup_expired_sessions(self) -> int:
+        """Remove expired admin sessions. Returns count of removed."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM admin_sessions WHERE expires_at < ? OR is_valid = 0",
+                (datetime.now().isoformat(),)
+            )
+            conn.commit()
+            return cursor.rowcount
+    
+    # ==================== Analytics Methods ====================
+    
+    def get_daily_query_stats(self, days: int = 30) -> list[dict]:
+        """Get daily query statistics for the past N days."""
+        from datetime import timedelta
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT DATE(created_at) as date, COUNT(*) as count
+                FROM transactions
+                WHERE created_at >= ?
+                GROUP BY DATE(created_at)
+                ORDER BY date ASC
+                """,
+                (start_date.isoformat(),)
+            )
+            rows = cursor.fetchall()
+            return [{"date": row["date"], "count": row["count"]} for row in rows]
+    
+    def get_dashboard_stats(self) -> dict:
+        """Get dashboard statistics."""
+        user_stats = self.get_bot_user_stats()
+        active_subs = self.get_active_subscriptions_count()
+        
+        with self._get_connection() as conn:
+            # Today's queries
+            from datetime import date
+            today = date.today().isoformat()
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE DATE(created_at) = ?",
+                (today,)
+            )
+            today_queries = cursor.fetchone()[0]
+            
+            # Total transactions
+            cursor = conn.execute("SELECT COUNT(*) FROM transactions")
+            total_transactions = cursor.fetchone()[0]
+        
+        return {
+            **user_stats,
+            "active_subscriptions": active_subs,
+            "today_queries": today_queries,
+            "total_transactions": total_transactions,
+        }
