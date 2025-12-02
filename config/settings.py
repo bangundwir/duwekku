@@ -9,9 +9,17 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     
     # Poe API
-    poe_api_key: str
+    poe_api_key: str = ""
     poe_base_url: str = "https://api.poe.com/v1"
     poe_model: str = "gemini-2.5-flash"
+    
+    # Groq API
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "llama-3.3-70b-versatile"
+    
+    # Default AI Provider
+    default_ai_provider: str = "groq"
     
     # TiDB Cloud
     tidb_host: str = "gateway01.ap-southeast-1.prod.aws.tidbcloud.com"

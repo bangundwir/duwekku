@@ -1,10 +1,12 @@
 import logging
 from datetime import datetime
+from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from src.database.manager import DatabaseManager
+from src.ai.provider_manager import ProviderManager
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,23 @@ HELP_MESSAGE = """
 ↳ Hapus transaksi berdasarkan ID
 ↳ Contoh: `/delete 5`
 
+/provider
+↳ Lihat AI provider aktif
+
+/provider list
+↳ Lihat semua provider tersedia
+
+/provider set `[nama]`
+↳ Ganti provider (poe/groq)
+↳ Contoh: `/provider set groq`
+
+/models
+↳ Lihat model AI tersedia
+
+/model set `[nama]`
+↳ Ganti model AI
+↳ Contoh: `/model set llama-3.3-70b-versatile`
+
 ━━━━━━━━━━━━━━━━━━━━━━━
 💡 *TIPS FORMAT ANGKA:*
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -94,8 +113,9 @@ gaji, bonus, freelance, investasi, hadiah
 class CommandHandler:
     """Handles Telegram bot commands."""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, provider_manager: Optional[ProviderManager] = None):
         self.db = db_manager
+        self.provider_manager = provider_manager
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -108,7 +128,10 @@ class CommandHandler:
                 InlineKeyboardButton("📋 History", callback_data="history"),
                 InlineKeyboardButton("📊 Summary", callback_data="summary"),
             ],
-            [InlineKeyboardButton("📖 Bantuan", callback_data="help")],
+            [
+                InlineKeyboardButton("🤖 AI Settings", callback_data="show_provider"),
+                InlineKeyboardButton("📖 Bantuan", callback_data="help"),
+            ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -344,3 +367,281 @@ Ketik transaksi seperti:
 
         elif query.data == "help":
             await query.edit_message_text(HELP_MESSAGE, parse_mode="Markdown")
+        
+        # Provider selection callbacks
+        elif query.data.startswith("set_provider:"):
+            provider_name = query.data.split(":")[1]
+            user_id = query.from_user.id
+            
+            if self.provider_manager and self.provider_manager.set_user_provider(user_id, provider_name):
+                info = self.provider_manager.get_user_provider_info(user_id)
+                providers = self.provider_manager.list_providers()
+                
+                # Rebuild provider buttons
+                provider_buttons = []
+                for p in providers:
+                    if p.is_configured:
+                        emoji = "✅" if p.name == info.name else "⬜"
+                        provider_buttons.append(
+                            InlineKeyboardButton(
+                                f"{emoji} {p.display_name}",
+                                callback_data=f"set_provider:{p.name}"
+                            )
+                        )
+                
+                keyboard = [
+                    provider_buttons,
+                    [InlineKeyboardButton("🧠 Pilih Model", callback_data="show_models")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                message = f"""
+✅ *PROVIDER BERHASIL DIGANTI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Provider Aktif:*
+   {info.display_name}
+
+🧠 *Model Aktif:*
+   `{info.current_model}`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+*Pilih Provider:*
+"""
+                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data == "show_models":
+            user_id = query.from_user.id
+            if self.provider_manager:
+                await self._show_models_interactive(query, user_id)
+        
+        elif query.data.startswith("models_page:"):
+            page = int(query.data.split(":")[1])
+            user_id = query.from_user.id
+            if self.provider_manager:
+                await self._show_models_interactive(query, user_id, page)
+        
+        elif query.data.startswith("set_model:"):
+            model_id = query.data.split(":", 1)[1]
+            user_id = query.from_user.id
+            
+            if self.provider_manager and self.provider_manager.set_user_model(user_id, model_id):
+                info = self.provider_manager.get_user_provider_info(user_id)
+                
+                keyboard = [
+                    [InlineKeyboardButton("🧠 Pilih Model Lain", callback_data="show_models")],
+                    [InlineKeyboardButton("🔙 Kembali ke Provider", callback_data="show_provider")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                message = f"""
+✅ *MODEL BERHASIL DIGANTI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Provider:* {info.display_name}
+🧠 *Model:* `{info.current_model}`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+Sekarang bot akan menggunakan model ini untuk parsing transaksi.
+"""
+                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data == "show_provider":
+            user_id = query.from_user.id
+            if self.provider_manager:
+                info = self.provider_manager.get_user_provider_info(user_id)
+                providers = self.provider_manager.list_providers()
+                
+                provider_buttons = []
+                for p in providers:
+                    if p.is_configured:
+                        emoji = "✅" if p.name == info.name else "⬜"
+                        provider_buttons.append(
+                            InlineKeyboardButton(
+                                f"{emoji} {p.display_name}",
+                                callback_data=f"set_provider:{p.name}"
+                            )
+                        )
+                
+                keyboard = [
+                    provider_buttons,
+                    [InlineKeyboardButton("🧠 Pilih Model", callback_data="show_models")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                message = f"""
+🤖 *PENGATURAN AI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Provider Aktif:*
+   {info.display_name}
+
+🧠 *Model Aktif:*
+   `{info.current_model}`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+*Pilih Provider:*
+"""
+                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data == "noop":
+            # Do nothing, just acknowledge
+            pass
+
+    async def cmd_provider(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /provider command - show provider with interactive buttons."""
+        if not self.provider_manager:
+            await update.message.reply_text("❌ Provider manager tidak tersedia")
+            return
+        
+        user_id = update.effective_user.id
+        info = self.provider_manager.get_user_provider_info(user_id)
+        providers = self.provider_manager.list_providers()
+        
+        if not info:
+            await update.message.reply_text("❌ Tidak ada provider yang dikonfigurasi")
+            return
+        
+        # Build provider buttons
+        provider_buttons = []
+        for p in providers:
+            if p.is_configured:
+                emoji = "✅" if p.name == info.name else "⬜"
+                provider_buttons.append(
+                    InlineKeyboardButton(
+                        f"{emoji} {p.display_name}",
+                        callback_data=f"set_provider:{p.name}"
+                    )
+                )
+        
+        keyboard = [
+            provider_buttons,
+            [InlineKeyboardButton("🧠 Pilih Model", callback_data="show_models")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = f"""
+🤖 *PENGATURAN AI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Provider Aktif:*
+   {info.display_name}
+
+🧠 *Model Aktif:*
+   `{info.current_model}`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+*Pilih Provider:*
+"""
+        await update.message.reply_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+
+    async def cmd_models(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /models command - list available models with interactive buttons."""
+        if not self.provider_manager:
+            await update.message.reply_text("❌ Provider manager tidak tersedia")
+            return
+        
+        user_id = update.effective_user.id
+        await self._show_models_interactive(update.message, user_id)
+    
+    async def _show_models_interactive(self, message_or_query, user_id: int, page: int = 0) -> None:
+        """Show models with interactive pagination."""
+        info = self.provider_manager.get_user_provider_info(user_id)
+        models = self.provider_manager.list_models(user_id)
+        
+        if not models:
+            text = "❌ Tidak dapat mengambil daftar model"
+            if hasattr(message_or_query, 'edit_message_text'):
+                await message_or_query.edit_message_text(text)
+            else:
+                await message_or_query.reply_text(text)
+            return
+        
+        # Pagination settings
+        models_per_page = 8
+        total_pages = (len(models) + models_per_page - 1) // models_per_page
+        page = max(0, min(page, total_pages - 1))
+        
+        start_idx = page * models_per_page
+        end_idx = min(start_idx + models_per_page, len(models))
+        page_models = models[start_idx:end_idx]
+        
+        current_model = info.current_model if info else None
+        
+        # Build model buttons (2 per row)
+        keyboard = []
+        for i in range(0, len(page_models), 2):
+            row = []
+            for m in page_models[i:i+2]:
+                emoji = "✅" if m.id == current_model else "⬜"
+                # Truncate long model names
+                display_name = m.id[:20] + ".." if len(m.id) > 20 else m.id
+                row.append(InlineKeyboardButton(
+                    f"{emoji} {display_name}",
+                    callback_data=f"set_model:{m.id}"
+                ))
+            keyboard.append(row)
+        
+        # Navigation buttons
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"models_page:{page-1}"))
+        nav_row.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"models_page:{page+1}"))
+        keyboard.append(nav_row)
+        
+        # Back button
+        keyboard.append([InlineKeyboardButton("🔙 Kembali ke Provider", callback_data="show_provider")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = f"""
+🧠 *PILIH MODEL AI*
+━━━━━━━━━━━━━━━━━━━━━━━
+📦 Provider: *{info.display_name if info else 'Unknown'}*
+✅ Model aktif: `{current_model}`
+━━━━━━━━━━━━━━━━━━━━━━━
+
+*Tap untuk memilih model:*
+"""
+        
+        if hasattr(message_or_query, 'edit_message_text'):
+            await message_or_query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        else:
+            await message_or_query.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+
+    async def cmd_model(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /model command - redirect to interactive model selection."""
+        if not self.provider_manager:
+            await update.message.reply_text("❌ Provider manager tidak tersedia")
+            return
+        
+        user_id = update.effective_user.id
+        args = context.args or []
+        
+        # If user provides model name directly, set it
+        if args and args[0] == "set" and len(args) > 1:
+            model_id = args[1]
+            if self.provider_manager.set_user_model(user_id, model_id):
+                info = self.provider_manager.get_user_provider_info(user_id)
+                keyboard = [[InlineKeyboardButton("🧠 Lihat Model Lain", callback_data="show_models")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                message = f"""
+✅ *MODEL BERHASIL DIGANTI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Provider:* {info.display_name}
+🧠 *Model:* `{info.current_model}`
+"""
+                await update.message.reply_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(
+                    f"❌ Gagal mengatur model `{model_id}`\n\n"
+                    f"💡 Ketik `/models` untuk melihat model tersedia",
+                    parse_mode="Markdown"
+                )
+            return
+        
+        # Show interactive model selection
+        await self._show_models_interactive(update.message, user_id)

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import get_settings
 from src.ai.parser import AIParser
+from src.ai.provider_manager import ProviderManager
 from src.database.sqlite_db import SQLiteDB
 from src.database.tidb_db import TiDBCloud
 from src.database.manager import DatabaseManager
@@ -72,19 +73,17 @@ def main():
         if synced > 0:
             logger.info(f"Synced {synced} pending transactions to TiDB Cloud")
     
-    # Initialize AI parser
-    ai_parser = AIParser(
-        api_key=settings.poe_api_key,
-        base_url=settings.poe_base_url,
-        model=settings.poe_model,
-    )
-    logger.info("AI Parser initialized")
+    # Initialize Provider Manager (multi-provider support)
+    provider_manager = ProviderManager(settings, sqlite_db)
+    configured_providers = [p.name for p in provider_manager.list_providers() if p.is_configured]
+    logger.info(f"AI Provider Manager initialized with providers: {configured_providers}")
+    logger.info(f"Default provider: {settings.default_ai_provider}")
     
     # Initialize and run bot
     bot = BotHandler(
         token=settings.telegram_bot_token,
-        ai_parser=ai_parser,
         db_manager=db_manager,
+        provider_manager=provider_manager,
     )
     
     logger.info("Bot is ready! Starting polling...")

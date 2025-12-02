@@ -5,7 +5,8 @@ Bot Telegram untuk mencatat keuangan pribadi dengan bantuan AI. Cukup ketik tran
 ## Fitur
 
 - 📝 Catat transaksi dengan bahasa natural (contoh: "beli makan 50rb", "gajian 5jt")
-- 🤖 AI parsing menggunakan Poe API (Gemini 2.5 Flash)
+- 🤖 Multi AI Provider: Pilih antara Poe API atau Groq API
+- 🧠 Pilih model AI sesuai kebutuhan
 - 📊 Lihat ringkasan keuangan bulanan
 - 📋 Lihat history transaksi
 - 🗑️ Hapus transaksi
@@ -31,11 +32,19 @@ uv run python src/main.py
 
 ## Perintah Bot
 
+### Transaksi
 - `/start` - Tampilkan pesan selamat datang
 - `/history` - Lihat 10 transaksi terakhir
 - `/summary` - Ringkasan bulan ini
 - `/summary [bulan] [tahun]` - Ringkasan bulan tertentu
 - `/delete [id]` - Hapus transaksi
+
+### AI Provider
+- `/provider` - Lihat AI provider aktif
+- `/provider list` - Lihat semua provider tersedia
+- `/provider set [nama]` - Ganti provider (poe/groq)
+- `/models` - Lihat model AI tersedia
+- `/model set [nama]` - Ganti model AI
 
 ## Contoh Penggunaan
 
@@ -56,10 +65,37 @@ uv run pytest tests/ -v
 ```
 ├── src/
 │   ├── bot/          # Telegram bot handlers
-│   ├── ai/           # AI parser (Poe API)
+│   ├── ai/           # AI providers (Poe, Groq)
+│   │   └── providers/  # Provider implementations
 │   ├── database/     # SQLite & TiDB Cloud
 │   └── models/       # Data models
 ├── config/           # Settings
 ├── tests/            # Unit tests
 └── data/             # SQLite database
+```
+
+## AI Providers
+
+Bot mendukung multiple AI providers:
+
+| Provider | Model Default | Keterangan |
+|----------|---------------|------------|
+| Groq | llama-3.3-70b-versatile | Cepat, gratis |
+| Poe | gemini-2.5-flash | Multi-model |
+
+### Konfigurasi Provider
+
+Set environment variables di `.env`:
+
+```env
+# Groq API (recommended)
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Poe API
+POE_API_KEY=your_poe_api_key
+POE_MODEL=gemini-2.5-flash
+
+# Default provider
+DEFAULT_AI_PROVIDER=groq
 ```

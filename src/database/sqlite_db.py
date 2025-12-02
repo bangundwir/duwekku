@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.models.transaction import Transaction
+from src.models.user_preference import UserPreference
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,16 @@ class SQLiteDB:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON transactions(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON transactions(created_at)")
+            
+            # User preferences table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    user_id INTEGER PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    model TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.commit()
 
     
@@ -171,3 +182,38 @@ class SQLiteDB:
             )
             rows = cursor.fetchall()
             return [Transaction.from_dict(dict(row)) for row in rows]
+
+    # User Preference methods
+    
+    def save_user_preference(self, user_id: int, provider: str, model: Optional[str] = None) -> bool:
+        """Save or update user's AI provider preference."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO user_preferences (user_id, provider, model, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        provider = excluded.provider,
+                        model = excluded.model,
+                        updated_at = excluded.updated_at
+                    """,
+                    (user_id, provider, model, datetime.now().isoformat())
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save user preference: {e}")
+            return False
+    
+    def get_user_preference(self, user_id: int) -> Optional[UserPreference]:
+        """Get user's AI provider preference."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM user_preferences WHERE user_id = ?",
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserPreference.from_dict(dict(row))
+            return None

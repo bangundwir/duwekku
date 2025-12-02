@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 
 from telegram import Update
 from telegram.ext import (
@@ -12,6 +13,7 @@ from telegram.ext import (
 )
 
 from src.ai.parser import AIParser
+from src.ai.provider_manager import ProviderManager
 from src.database.manager import DatabaseManager
 from src.models.transaction import Transaction
 from .commands import CommandHandler
@@ -25,13 +27,15 @@ class BotHandler:
     def __init__(
         self,
         token: str,
-        ai_parser: AIParser,
         db_manager: DatabaseManager,
+        provider_manager: Optional[ProviderManager] = None,
+        ai_parser: Optional[AIParser] = None,  # Deprecated, use provider_manager
     ):
         self.token = token
-        self.ai_parser = ai_parser
         self.db_manager = db_manager
-        self.commands = CommandHandler(db_manager)
+        self.provider_manager = provider_manager
+        self.ai_parser = ai_parser  # Fallback for backward compatibility
+        self.commands = CommandHandler(db_manager, provider_manager)
         self.app: Application = None
     
     def setup(self) -> Application:
@@ -44,6 +48,11 @@ class BotHandler:
         self.app.add_handler(TelegramCommandHandler("history", self.commands.cmd_history))
         self.app.add_handler(TelegramCommandHandler("summary", self.commands.cmd_summary))
         self.app.add_handler(TelegramCommandHandler("delete", self.commands.cmd_delete))
+        
+        # AI Provider commands
+        self.app.add_handler(TelegramCommandHandler("provider", self.commands.cmd_provider))
+        self.app.add_handler(TelegramCommandHandler("models", self.commands.cmd_models))
+        self.app.add_handler(TelegramCommandHandler("model", self.commands.cmd_model))
         
         # Callback handler for inline buttons
         self.app.add_handler(CallbackQueryHandler(self.commands.handle_callback))
@@ -71,8 +80,12 @@ class BotHandler:
         # Show typing indicator
         await update.message.chat.send_action("typing")
         
-        # Parse transaction using AI
-        parsed = self.ai_parser.parse_transaction(message_text)
+        # Parse transaction using AI (prefer provider_manager)
+        parsed = None
+        if self.provider_manager:
+            parsed = self.provider_manager.parse_transaction(user_id, message_text)
+        elif self.ai_parser:
+            parsed = self.ai_parser.parse_transaction(message_text)
         
         if not parsed:
             message = """
