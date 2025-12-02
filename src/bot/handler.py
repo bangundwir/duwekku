@@ -54,6 +54,9 @@ class BotHandler:
         self.app.add_handler(TelegramCommandHandler("models", self.commands.cmd_models))
         self.app.add_handler(TelegramCommandHandler("model", self.commands.cmd_model))
         
+        # Export command
+        self.app.add_handler(TelegramCommandHandler("export", self.commands.cmd_export))
+        
         # Callback handler for inline buttons
         self.app.add_handler(CallbackQueryHandler(self.commands.handle_callback))
         

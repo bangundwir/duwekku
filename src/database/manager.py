@@ -107,3 +107,19 @@ class DatabaseManager:
             logger.error(f"Error during sync: {e}")
         
         return synced_count
+    
+    def get_all_transactions(self, user_id: int) -> list[Transaction]:
+        """Get all transactions for user."""
+        try:
+            return self.sqlite.get_all_transactions(user_id)
+        except Exception as e:
+            logger.error(f"Failed to get all transactions: {e}")
+            return []
+    
+    def get_transactions_by_month(self, user_id: int, month: int, year: int) -> list[Transaction]:
+        """Get transactions for a specific month."""
+        try:
+            return self.sqlite.get_transactions_by_month(user_id, month, year)
+        except Exception as e:
+            logger.error(f"Failed to get transactions by month: {e}")
+            return []

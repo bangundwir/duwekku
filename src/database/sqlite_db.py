@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,11 @@ from src.models.transaction import Transaction
 from src.models.user_preference import UserPreference
 
 logger = logging.getLogger(__name__)
+
+
+def generate_unique_id() -> int:
+    """Generate a unique 5-digit transaction ID."""
+    return random.randint(10000, 99999)
 
 
 class SQLiteDB:
@@ -66,15 +72,29 @@ class SQLiteDB:
             conn.commit()
 
     
-    def insert_transaction(self, transaction: Transaction) -> int:
-        """Insert transaction and return its ID."""
+    def _generate_unique_transaction_id(self) -> int:
+        """Generate a unique 5-digit transaction ID that doesn't exist in DB."""
         with self._get_connection() as conn:
-            cursor = conn.execute(
+            for _ in range(100):  # Max 100 attempts
+                new_id = generate_unique_id()
+                cursor = conn.execute("SELECT id FROM transactions WHERE id = ?", (new_id,))
+                if cursor.fetchone() is None:
+                    return new_id
+            # Fallback to 6-digit if 5-digit exhausted
+            return random.randint(100000, 999999)
+    
+    def insert_transaction(self, transaction: Transaction) -> int:
+        """Insert transaction with unique ID and return its ID."""
+        unique_id = self._generate_unique_transaction_id()
+        
+        with self._get_connection() as conn:
+            conn.execute(
                 """
-                INSERT INTO transactions (user_id, type, amount, category, description, created_at, synced)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions (id, user_id, type, amount, category, description, created_at, synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    unique_id,
                     transaction.user_id,
                     transaction.type,
                     transaction.amount,
@@ -85,7 +105,7 @@ class SQLiteDB:
                 )
             )
             conn.commit()
-            return cursor.lastrowid
+            return unique_id
     
     def get_transactions(self, user_id: int, limit: int = 10) -> list[Transaction]:
         """Get transactions for user, ordered by newest first."""
@@ -217,3 +237,37 @@ class SQLiteDB:
             if row:
                 return UserPreference.from_dict(dict(row))
             return None
+    
+    def get_all_transactions(self, user_id: int) -> list[Transaction]:
+        """Get all transactions for user, ordered by newest first."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM transactions 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
+            rows = cursor.fetchall()
+            return [Transaction.from_dict(dict(row)) for row in rows]
+    
+    def get_transactions_by_month(self, user_id: int, month: int, year: int) -> list[Transaction]:
+        """Get transactions for a specific month."""
+        start_date = f"{year:04d}-{month:02d}-01"
+        if month == 12:
+            end_date = f"{year + 1:04d}-01-01"
+        else:
+            end_date = f"{year:04d}-{month + 1:02d}-01"
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM transactions 
+                WHERE user_id = ? AND created_at >= ? AND created_at < ?
+                ORDER BY created_at DESC
+                """,
+                (user_id, start_date, end_date)
+            )
+            rows = cursor.fetchall()
+            return [Transaction.from_dict(dict(row)) for row in rows]

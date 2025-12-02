@@ -10,6 +10,8 @@ Bot Telegram untuk mencatat keuangan pribadi dengan bantuan AI. Cukup ketik tran
 - 📊 Lihat ringkasan keuangan bulanan
 - 📋 Lihat history transaksi
 - 🗑️ Hapus transaksi
+- 📥 Export data ke CSV atau HTML
+- 🆔 ID transaksi unik 5 digit
 - 💾 Dual database: SQLite (lokal) + TiDB Cloud (backup)
 
 ## Instalasi
@@ -45,6 +47,11 @@ uv run python src/main.py
 - `/provider set [nama]` - Ganti provider (poe/groq)
 - `/models` - Lihat model AI tersedia
 - `/model set [nama]` - Ganti model AI
+
+### Export Data
+- `/export` - Pilih format export (interaktif)
+- `/export csv` - Download data dalam format CSV (untuk Excel/Google Sheets)
+- `/export html` - Download laporan dalam format HTML (visual, bisa dicetak)
 
 ## Contoh Penggunaan
 

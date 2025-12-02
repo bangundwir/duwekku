@@ -1,3 +1,4 @@
+import io
 import logging
 from datetime import datetime
 from typing import Optional
@@ -7,6 +8,7 @@ from telegram.ext import ContextTypes
 
 from src.database.manager import DatabaseManager
 from src.ai.provider_manager import ProviderManager
+from src.utils.exporter import TransactionExporter
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,15 @@ HELP_MESSAGE = """
 ↳ Ganti model AI
 ↳ Contoh: `/model set llama-3.3-70b-versatile`
 
+/export
+↳ Export data transaksi (pilih format)
+
+/export csv
+↳ Download data dalam format CSV
+
+/export html
+↳ Download laporan dalam format HTML
+
 ━━━━━━━━━━━━━━━━━━━━━━━
 💡 *TIPS FORMAT ANGKA:*
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -129,9 +140,10 @@ class CommandHandler:
                 InlineKeyboardButton("📊 Summary", callback_data="summary"),
             ],
             [
+                InlineKeyboardButton("📥 Export", callback_data="show_export"),
                 InlineKeyboardButton("🤖 AI Settings", callback_data="show_provider"),
-                InlineKeyboardButton("📖 Bantuan", callback_data="help"),
             ],
+            [InlineKeyboardButton("📖 Bantuan", callback_data="help")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -487,6 +499,49 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
         elif query.data == "noop":
             # Do nothing, just acknowledge
             pass
+        
+        # Export callbacks
+        elif query.data == "show_export":
+            keyboard = [
+                [
+                    InlineKeyboardButton("📄 CSV (Spreadsheet)", callback_data="export:csv:all"),
+                    InlineKeyboardButton("🌐 HTML (Laporan)", callback_data="export:html:all"),
+                ],
+                [
+                    InlineKeyboardButton("📅 Bulan Ini (CSV)", callback_data="export:csv:month"),
+                    InlineKeyboardButton("📅 Bulan Ini (HTML)", callback_data="export:html:month"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            message = """
+📥 *EXPORT DATA TRANSAKSI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Pilih format export:
+
+📄 *CSV* - Untuk dibuka di Excel/Google Sheets
+🌐 *HTML* - Laporan visual yang bisa dicetak
+
+━━━━━━━━━━━━━━━━━━━━━━━
+*Pilih format:*
+"""
+            await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data.startswith("export:"):
+            parts = query.data.split(":")
+            format_type = parts[1]  # csv or html
+            scope = parts[2]  # all or month
+            user_id = query.from_user.id
+            month_only = (scope == "month")
+            
+            await query.edit_message_text("⏳ Sedang menyiapkan file export...")
+            
+            # Create a fake message object to reuse export methods
+            if format_type == "csv":
+                await self._send_csv_export(query.message, user_id, month_only)
+            elif format_type == "html":
+                await self._send_html_export(query.message, user_id, month_only)
 
     async def cmd_provider(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /provider command - show provider with interactive buttons."""
@@ -645,3 +700,130 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
         
         # Show interactive model selection
         await self._show_models_interactive(update.message, user_id)
+
+    async def cmd_export(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /export [csv|html] command - export transaction data."""
+        user_id = update.effective_user.id
+        args = context.args or []
+        
+        if not args:
+            # Show export options with buttons
+            keyboard = [
+                [
+                    InlineKeyboardButton("📄 CSV (Spreadsheet)", callback_data="export:csv:all"),
+                    InlineKeyboardButton("🌐 HTML (Laporan)", callback_data="export:html:all"),
+                ],
+                [
+                    InlineKeyboardButton("📅 Bulan Ini (CSV)", callback_data="export:csv:month"),
+                    InlineKeyboardButton("📅 Bulan Ini (HTML)", callback_data="export:html:month"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            message = """
+📥 *EXPORT DATA TRANSAKSI*
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Pilih format export:
+
+📄 *CSV* - Untuk dibuka di Excel/Google Sheets
+🌐 *HTML* - Laporan visual yang bisa dicetak
+
+━━━━━━━━━━━━━━━━━━━━━━━
+*Pilih format:*
+"""
+            await update.message.reply_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+            return
+        
+        format_type = args[0].lower()
+        
+        if format_type == "csv":
+            await self._send_csv_export(update.message, user_id)
+        elif format_type == "html":
+            await self._send_html_export(update.message, user_id)
+        else:
+            await update.message.reply_text(
+                "❌ Format tidak dikenal.\n\nGunakan: `/export csv` atau `/export html`",
+                parse_mode="Markdown"
+            )
+    
+    async def _send_csv_export(self, message, user_id: int, month_only: bool = False) -> None:
+        """Send CSV export file."""
+        if month_only:
+            now = datetime.now()
+            transactions = self.db.get_transactions_by_month(user_id, now.month, now.year)
+            filename = f"transaksi_{now.strftime('%Y-%m')}.csv"
+            title = f"Transaksi {now.strftime('%B %Y')}"
+        else:
+            transactions = self.db.get_all_transactions(user_id)
+            filename = f"transaksi_semua_{datetime.now().strftime('%Y%m%d')}.csv"
+            title = "Semua Transaksi"
+        
+        if not transactions:
+            await message.reply_text("📭 Tidak ada transaksi untuk diexport")
+            return
+        
+        csv_content = TransactionExporter.to_csv(transactions)
+        
+        # Send as document
+        csv_bytes = io.BytesIO(csv_content.encode('utf-8-sig'))  # UTF-8 with BOM for Excel
+        csv_bytes.name = filename
+        
+        caption = f"""
+✅ *EXPORT BERHASIL*
+━━━━━━━━━━━━━━━━━━━━━━━
+📄 Format: CSV
+📊 {title}
+📝 Total: {len(transactions)} transaksi
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Buka dengan Excel atau Google Sheets
+"""
+        await message.reply_document(
+            document=csv_bytes,
+            filename=filename,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+    
+    async def _send_html_export(self, message, user_id: int, month_only: bool = False) -> None:
+        """Send HTML export file."""
+        if month_only:
+            now = datetime.now()
+            transactions = self.db.get_transactions_by_month(user_id, now.month, now.year)
+            summary = self.db.get_summary(user_id, now.month, now.year)
+            filename = f"laporan_{now.strftime('%Y-%m')}.html"
+            title = f"Laporan Keuangan {now.strftime('%B %Y')}"
+        else:
+            transactions = self.db.get_all_transactions(user_id)
+            # Calculate total summary
+            total_income = sum(t.amount for t in transactions if t.type == "income")
+            total_expense = sum(t.amount for t in transactions if t.type == "expense")
+            summary = {"income": total_income, "expense": total_expense, "balance": total_income - total_expense}
+            filename = f"laporan_semua_{datetime.now().strftime('%Y%m%d')}.html"
+            title = "Laporan Keuangan Lengkap"
+        
+        if not transactions:
+            await message.reply_text("📭 Tidak ada transaksi untuk diexport")
+            return
+        
+        html_content = TransactionExporter.to_html(transactions, title=title, summary=summary)
+        
+        # Send as document
+        html_bytes = io.BytesIO(html_content.encode('utf-8'))
+        html_bytes.name = filename
+        
+        caption = f"""
+✅ *EXPORT BERHASIL*
+━━━━━━━━━━━━━━━━━━━━━━━
+🌐 Format: HTML
+📊 {title}
+📝 Total: {len(transactions)} transaksi
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Buka di browser untuk melihat/cetak
+"""
+        await message.reply_document(
+            document=html_bytes,
+            filename=filename,
+            caption=caption,
+            parse_mode="Markdown"
+        )
