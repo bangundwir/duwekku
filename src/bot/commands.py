@@ -5,6 +5,7 @@ from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest
 
 from src.database.manager import DatabaseManager
 from src.ai.provider_manager import ProviderManager
@@ -186,6 +187,18 @@ class CommandHandler:
         self.provider_manager = provider_manager
         self.subscription_manager = subscription_manager
         self.financial_analyzer = financial_analyzer
+
+    async def _safe_edit_message(self, query, text: str, parse_mode: str = "Markdown", 
+                                  reply_markup=None) -> bool:
+        """Safely edit message, ignoring 'message not modified' errors."""
+        try:
+            await query.edit_message_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+            return True
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                # Message content is the same, just ignore
+                return False
+            raise  # Re-raise other BadRequest errors
 
     def _get_main_keyboard(self) -> ReplyKeyboardMarkup:
         """Get persistent main keyboard that appears at bottom of chat."""
@@ -443,7 +456,7 @@ Ketik transaksi seperti:
                 lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
                 message = "\n".join(lines)
 
-            await query.edit_message_text(message, parse_mode="Markdown")
+            await self._safe_edit_message(query, message)
 
         elif query.data == "summary":
             user_id = query.from_user.id
@@ -467,10 +480,10 @@ Ketik transaksi seperti:
 💸 Pengeluaran: Rp {expense_str}
 📈 Saldo: Rp {balance_str}
 """
-            await query.edit_message_text(message, parse_mode="Markdown")
+            await self._safe_edit_message(query, message)
 
         elif query.data == "help":
-            await query.edit_message_text(HELP_MESSAGE, parse_mode="Markdown")
+            await self._safe_edit_message(query, HELP_MESSAGE)
         
         # Provider selection callbacks
         elif query.data.startswith("set_provider:"):
@@ -512,7 +525,7 @@ Ketik transaksi seperti:
 ━━━━━━━━━━━━━━━━━━━━━━━
 *Pilih Provider:*
 """
-                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, message, reply_markup=reply_markup)
         
         elif query.data == "show_models":
             user_id = query.from_user.id
@@ -548,7 +561,7 @@ Ketik transaksi seperti:
 ━━━━━━━━━━━━━━━━━━━━━━━
 Sekarang bot akan menggunakan model ini untuk parsing transaksi.
 """
-                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, message, reply_markup=reply_markup)
         
         elif query.data == "show_provider":
             user_id = query.from_user.id
@@ -586,7 +599,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
 ━━━━━━━━━━━━━━━━━━━━━━━
 *Pilih Provider:*
 """
-                await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, message, reply_markup=reply_markup)
         
         elif query.data == "noop":
             # Do nothing, just acknowledge
@@ -601,13 +614,13 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 
                 if not subscriptions:
                     reply_markup = SubscriptionKeyboardBuilder.category_selection()
-                    await query.edit_message_text(
+                    await self._safe_edit_message(
+                        query,
                         "📭 *BELUM ADA LANGGANAN*\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                         "Tambahkan langganan pertama Anda!\n\n"
                         "💡 Contoh:\n"
                         "`langganan netflix 50rb 1 bulan`",
-                        parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
                     return
@@ -667,7 +680,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     ],
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, "\n".join(lines), reply_markup=reply_markup)
         
         elif query.data == "show_addsub":
             keyboard = [
@@ -680,14 +693,14 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(
+            await self._safe_edit_message(
+                query,
                 "📅 *TAMBAH LANGGANAN*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 "Pilih kategori atau ketik langsung:\n\n"
                 "💡 *Contoh:*\n"
                 "`/addsub langganan netflix 150rb 1 bulan`\n"
                 "`/addsub berlangganan spotify 60rb setahun`",
-                parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         
@@ -704,7 +717,8 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
             keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_addsub")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(
+            await self._safe_edit_message(
+                query,
                 f"📅 *TAMBAH {cat_names.get(category, category).upper()}*\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"Ketik dengan format natural:\n\n"
@@ -713,7 +727,6 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 f"`/addsub vps digitalocean 100rb 3 bulan`\n\n"
                 f"Atau format manual:\n"
                 f"`/addsub Netflix 150000 2024-01-01 2024-12-31 {category}`",
-                parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         
@@ -725,10 +738,10 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 if analysis is None:
                     keyboard = [[InlineKeyboardButton("📋 Lihat Transaksi", callback_data="history")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
-                    await query.edit_message_text(
+                    await self._safe_edit_message(
+                        query,
                         "📊 *ANALISIS KEUANGAN*\n\n"
                         "⚠️ Data tidak cukup (minimal 5 transaksi).",
-                        parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
                     return
@@ -776,7 +789,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     [InlineKeyboardButton("📥 Export Lengkap", callback_data="export:html:all")],
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, "\n".join(lines), reply_markup=reply_markup)
         
         elif query.data == "show_subcost":
             user_id = query.from_user.id
@@ -808,7 +821,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 
                 keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, "\n".join(lines), reply_markup=reply_markup)
         
         # Delete subscription callbacks
         elif query.data == "show_delsub":
@@ -819,10 +832,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 if not subscriptions:
                     keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
-                    await query.edit_message_text(
-                        "📭 Tidak ada langganan untuk dihapus.",
-                        reply_markup=reply_markup
-                    )
+                    await self._safe_edit_message(query, "📭 Tidak ada langganan untuk dihapus.", reply_markup=reply_markup)
                     return
                 
                 def fmt(amount):
@@ -844,7 +854,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 
                 keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")])
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, "\n".join(lines), reply_markup=reply_markup)
         
         elif query.data.startswith("confirm_delsub:"):
             user_id = query.from_user.id
@@ -854,7 +864,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
                 
                 if not sub:
-                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+                    await self._safe_edit_message(query, "❌ Langganan tidak ditemukan")
                     return
                 
                 def fmt(amount):
@@ -868,7 +878,8 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                await query.edit_message_text(
+                await self._safe_edit_message(
+                    query,
                     f"⚠️ *KONFIRMASI HAPUS*\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"Yakin ingin menghapus langganan ini?\n\n"
@@ -876,7 +887,6 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     f"💵 {fmt(sub.amount)}/bulan\n"
                     f"📅 Berakhir: {sub.end_date.strftime('%d %b %Y')}\n\n"
                     f"⚠️ Tindakan ini tidak dapat dibatalkan!",
-                    parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
         
@@ -892,15 +902,15 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     keyboard = [[InlineKeyboardButton("📋 Lihat Langganan", callback_data="show_subs")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
-                    await query.edit_message_text(
+                    await self._safe_edit_message(
+                        query,
                         f"✅ *LANGGANAN DIHAPUS*\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                         f"🗑️ *{sub_name}* berhasil dihapus",
-                        parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
                 else:
-                    await query.edit_message_text("❌ Gagal menghapus langganan")
+                    await self._safe_edit_message(query, "❌ Gagal menghapus langganan")
         
         # Renew subscription callbacks
         elif query.data == "show_renewsub":
@@ -911,7 +921,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 if not subscriptions:
                     keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
-                    await query.edit_message_text("📭 Tidak ada langganan untuk diperpanjang.", reply_markup=reply_markup)
+                    await self._safe_edit_message(query, "📭 Tidak ada langganan untuk diperpanjang.", reply_markup=reply_markup)
                     return
                 
                 lines = [
@@ -930,13 +940,14 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 
                 keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")])
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+                await self._safe_edit_message(query, "\n".join(lines), reply_markup=reply_markup)
         
         elif query.data.startswith("renew_select:"):
             sub_id = int(query.data.split(":")[1])
             reply_markup = SubscriptionKeyboardBuilder.renew_options(sub_id)
             
-            await query.edit_message_text(
+            await self._safe_edit_message(
+                query,
                 "🔄 *PILIH DURASI PERPANJANGAN*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 "Pilih berapa lama ingin memperpanjang:",
@@ -962,19 +973,19 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                         keyboard = [[InlineKeyboardButton("📋 Lihat Langganan", callback_data="show_subs")]]
                         reply_markup = InlineKeyboardMarkup(keyboard)
                         
-                        await query.edit_message_text(
+                        await self._safe_edit_message(
+                            query,
                             f"✅ *LANGGANAN DIPERPANJANG*\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                             f"📦 *{sub.name}*\n"
                             f"📅 Berakhir: {new_end.strftime('%d %b %Y')}\n"
                             f"⏱️ Diperpanjang {months} bulan",
-                            parse_mode="Markdown",
                             reply_markup=reply_markup
                         )
                     else:
-                        await query.edit_message_text("❌ Gagal memperpanjang langganan")
+                        await self._safe_edit_message(query, "❌ Gagal memperpanjang langganan")
                 else:
-                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+                    await self._safe_edit_message(query, "❌ Langganan tidak ditemukan")
         
         # Enhanced export subscription callback
         elif query.data == "export_subs_enhanced":
@@ -983,10 +994,10 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
                 
                 if not subscriptions:
-                    await query.edit_message_text("📭 Tidak ada langganan untuk diexport")
+                    await self._safe_edit_message(query, "📭 Tidak ada langganan untuk diexport")
                     return
                 
-                await query.edit_message_text("⏳ Sedang menyiapkan laporan interaktif...")
+                await self._safe_edit_message(query, "⏳ Sedang menyiapkan laporan interaktif...")
                 
                 # Generate enhanced HTML
                 html_content = TransactionExporter.subscriptions_to_html_enhanced(
@@ -1034,7 +1045,7 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
                 
                 if not sub:
-                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+                    await self._safe_edit_message(query, "❌ Langganan tidak ditemukan")
                     return
                 
                 # Create transaction from subscription
@@ -1061,7 +1072,8 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
-                    await query.edit_message_text(
+                    await self._safe_edit_message(
+                        query,
                         f"✅ *PEMBAYARAN TERCATAT!*\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                         f"💸 *Pengeluaran*\n"
@@ -1070,11 +1082,10 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                         f"📁 Kategori: Tagihan\n"
                         f"🆔 ID Transaksi: `{saved.id}`\n\n"
                         f"💡 Transaksi ini sudah tercatat di history Anda",
-                        parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
                 else:
-                    await query.edit_message_text("❌ Gagal mencatat transaksi")
+                    await self._safe_edit_message(query, "❌ Gagal mencatat transaksi")
         
         # Export callbacks
         elif query.data == "show_export":
@@ -1102,7 +1113,7 @@ Pilih format export:
 ━━━━━━━━━━━━━━━━━━━━━━━
 *Pilih format:*
 """
-            await query.edit_message_text(message, parse_mode="Markdown", reply_markup=reply_markup)
+            await self._safe_edit_message(query, message, reply_markup=reply_markup)
         
         elif query.data.startswith("export:"):
             parts = query.data.split(":")
@@ -1111,7 +1122,7 @@ Pilih format export:
             user_id = query.from_user.id
             month_only = (scope == "month")
             
-            await query.edit_message_text("⏳ Sedang menyiapkan file export...")
+            await self._safe_edit_message(query, "⏳ Sedang menyiapkan file export...")
             
             # Create a fake message object to reuse export methods
             if format_type == "csv":
@@ -1128,10 +1139,10 @@ Pilih format export:
                 if not subscriptions:
                     keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
-                    await query.edit_message_text("📭 Tidak ada langganan untuk diexport", reply_markup=reply_markup)
+                    await self._safe_edit_message(query, "📭 Tidak ada langganan untuk diexport", reply_markup=reply_markup)
                     return
                 
-                await query.edit_message_text("⏳ Sedang menyiapkan laporan langganan...")
+                await self._safe_edit_message(query, "⏳ Sedang menyiapkan laporan langganan...")
                 
                 # Generate subscription HTML
                 html_content = TransactionExporter.subscriptions_to_html(
@@ -1227,7 +1238,11 @@ Pilih format export:
         if not models:
             text = "❌ Tidak dapat mengambil daftar model"
             if hasattr(message_or_query, 'edit_message_text'):
-                await message_or_query.edit_message_text(text)
+                try:
+                    await message_or_query.edit_message_text(text)
+                except BadRequest as e:
+                    if "Message is not modified" not in str(e):
+                        raise
             else:
                 await message_or_query.reply_text(text)
             return
@@ -1282,7 +1297,11 @@ Pilih format export:
 """
         
         if hasattr(message_or_query, 'edit_message_text'):
-            await message_or_query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            try:
+                await message_or_query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    raise
         else:
             await message_or_query.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
 
