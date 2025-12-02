@@ -16,6 +16,8 @@ from src.ai.parser import AIParser
 from src.ai.provider_manager import ProviderManager
 from src.database.manager import DatabaseManager
 from src.models.transaction import Transaction
+from src.subscription.manager import SubscriptionManager
+from src.analysis.analyzer import FinancialAnalyzer
 from .commands import CommandHandler
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,17 @@ class BotHandler:
         self.db_manager = db_manager
         self.provider_manager = provider_manager
         self.ai_parser = ai_parser  # Fallback for backward compatibility
-        self.commands = CommandHandler(db_manager, provider_manager)
+        
+        # Initialize subscription manager and financial analyzer
+        self.subscription_manager = SubscriptionManager(db_manager)
+        self.financial_analyzer = FinancialAnalyzer(db_manager)
+        
+        self.commands = CommandHandler(
+            db_manager, 
+            provider_manager,
+            subscription_manager=self.subscription_manager,
+            financial_analyzer=self.financial_analyzer
+        )
         self.app: Application = None
     
     def setup(self) -> Application:
@@ -56,6 +68,17 @@ class BotHandler:
         
         # Export command
         self.app.add_handler(TelegramCommandHandler("export", self.commands.cmd_export))
+        self.app.add_handler(TelegramCommandHandler("exportfull", self.commands.cmd_export_full))
+        
+        # Financial Analysis command
+        self.app.add_handler(TelegramCommandHandler("analysis", self.commands.cmd_analysis))
+        
+        # Subscription commands
+        self.app.add_handler(TelegramCommandHandler("addsub", self.commands.cmd_addsub))
+        self.app.add_handler(TelegramCommandHandler("subs", self.commands.cmd_subs))
+        self.app.add_handler(TelegramCommandHandler("delsub", self.commands.cmd_delsub))
+        self.app.add_handler(TelegramCommandHandler("renewsub", self.commands.cmd_renewsub))
+        self.app.add_handler(TelegramCommandHandler("subcost", self.commands.cmd_subcost))
         
         # Callback handler for inline buttons
         self.app.add_handler(CallbackQueryHandler(self.commands.handle_callback))

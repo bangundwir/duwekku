@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\subscription.py
+# hypothesis_version: 6.148.5
+
+['%d %b %Y', ',', '.', '..', '1 hari lagi', 'Aktif', 'Berakhir hari ini!', 'Kadaluarsa', 'Segera Berakhir', 'Subscription', 'Sudah berakhir', 'Unknown', 'active', 'amount', 'category', 'created_at', 'domain', 'end_date', 'expired', 'expiring_soon', 'hosting', 'id', 'is_active', 'name', 'notes', 'other', 'software', 'start_date', 'streaming', 'synced', 'user_id', '⚠️', '✅', '❌', '🌐', '🎬', '💿', '📦', '🖥️']

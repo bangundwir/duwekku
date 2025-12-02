@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\ai\providers\groq.py
+# hypothesis_version: 6.148.5
+
+[0.1, 10.0, 30.0, 200, 500, 'Authorization', 'Gemma 2 9B', 'Groq', 'Llama 3.1 8B Instant', 'Mixtral 8x7B', '\\{[^}]+\\}', 'amount', 'category', 'content', 'data', 'description', 'expense', 'gemma2-9b-it', 'groq', 'id', 'lainnya', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'owned_by', 'role', 'type', 'user', 'whisper']

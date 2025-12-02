@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\transaction.py
+# hypothesis_version: 6.148.5
+
+['%d %b %Y, %H:%M', '%d/%m', '+', ',', '-', '.', '..', 'Transaction', 'amount', 'belanja', 'bonus', 'category', 'created_at', 'description', 'freelance', 'gaji', 'hadiah', 'hiburan', 'id', 'income', 'investasi', 'kesehatan', 'lainnya', 'makanan', 'pendidikan', 'synced', 'tagihan', 'transportasi', 'type', 'user_id', '🍔', '🎀', '🎁', '🎮', '💊', '💰', '💸', '💻', '💼', '📄', '📈', '📚', '📦', '🚗', '🛒']

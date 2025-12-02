@@ -45,6 +45,24 @@ class ParsedTransaction:
         )
 
 
+@dataclass
+class ParsedSubscription:
+    """Parsed subscription data from AI."""
+    
+    name: str
+    amount: float
+    category: str  # streaming, hosting, domain, software, other
+    duration_months: int
+    
+    def is_valid(self) -> bool:
+        """Check if parsed subscription has valid data."""
+        return (
+            len(self.name) > 0
+            and self.amount > 0
+            and self.duration_months > 0
+        )
+
+
 class AIProvider(ABC):
     """Abstract base class for AI providers."""
     
@@ -60,6 +78,10 @@ class AIProvider(ABC):
     def parse_transaction(self, message: str) -> Optional[ParsedTransaction]:
         """Parse natural language message into transaction data."""
         pass
+    
+    def parse_subscription(self, message: str) -> Optional[ParsedSubscription]:
+        """Parse natural language message into subscription data."""
+        return None  # Default implementation, override in subclasses
     
     @abstractmethod
     def list_models(self) -> list[AIModel]:
@@ -104,3 +126,18 @@ Pesan pengguna: "{message}"
 
 Balas HANYA dengan JSON valid tanpa penjelasan:
 {{"type": "income/expense", "amount": angka, "category": "kategori", "description": "deskripsi"}}"""
+
+    def _build_subscription_prompt(self, message: str) -> str:
+        """Build prompt for subscription parsing."""
+        return f"""Kamu adalah asisten untuk mengekstrak informasi langganan/subscription dari pesan dalam bahasa Indonesia.
+
+Ekstrak informasi berikut dari pesan pengguna:
+- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, dll)
+- amount: biaya per bulan dalam angka (konversi rb=ribu=1000, jt=juta=1000000)
+- category: kategori (streaming untuk Netflix/Spotify/YouTube, hosting untuk VPS/server, domain untuk domain, software untuk aplikasi, other untuk lainnya)
+- duration_months: durasi langganan dalam bulan (1 bulan=1, 1 tahun=12, 6 bulan=6)
+
+Pesan pengguna: "{message}"
+
+Balas HANYA dengan JSON valid tanpa penjelasan:
+{{"name": "nama layanan", "amount": angka, "category": "kategori", "duration_months": angka}}"""

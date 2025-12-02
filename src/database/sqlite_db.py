@@ -7,6 +7,7 @@ from typing import Optional
 
 from src.models.transaction import Transaction
 from src.models.user_preference import UserPreference
+from src.models.subscription import Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,26 @@ class SQLiteDB:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Subscriptions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'other',
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    is_active INTEGER DEFAULT 1,
+                    notes TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    synced INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_user_id ON subscriptions(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_end_date ON subscriptions(end_date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_category ON subscriptions(category)")
             conn.commit()
 
     
@@ -271,3 +292,127 @@ class SQLiteDB:
             )
             rows = cursor.fetchall()
             return [Transaction.from_dict(dict(row)) for row in rows]
+
+    # Subscription methods
+    
+    def _generate_unique_subscription_id(self) -> int:
+        """Generate a unique 5-digit subscription ID that doesn't exist in DB."""
+        with self._get_connection() as conn:
+            for _ in range(100):
+                new_id = generate_unique_id()
+                cursor = conn.execute("SELECT id FROM subscriptions WHERE id = ?", (new_id,))
+                if cursor.fetchone() is None:
+                    return new_id
+            return random.randint(100000, 999999)
+    
+    def insert_subscription(self, subscription: Subscription) -> int:
+        """Insert subscription with unique ID and return its ID."""
+        unique_id = self._generate_unique_subscription_id()
+        
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO subscriptions (id, user_id, name, amount, category, start_date, end_date, is_active, notes, created_at, synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    unique_id,
+                    subscription.user_id,
+                    subscription.name,
+                    subscription.amount,
+                    subscription.category,
+                    subscription.start_date.isoformat(),
+                    subscription.end_date.isoformat(),
+                    1 if subscription.is_active else 0,
+                    subscription.notes,
+                    subscription.created_at.isoformat(),
+                    0,
+                )
+            )
+            conn.commit()
+            return unique_id
+    
+    def get_subscriptions(self, user_id: int, include_expired: bool = False) -> list[Subscription]:
+        """Get subscriptions for user."""
+        with self._get_connection() as conn:
+            if include_expired:
+                cursor = conn.execute(
+                    "SELECT * FROM subscriptions WHERE user_id = ? ORDER BY end_date ASC",
+                    (user_id,)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM subscriptions WHERE user_id = ? AND is_active = 1 ORDER BY end_date ASC",
+                    (user_id,)
+                )
+            rows = cursor.fetchall()
+            return [Subscription.from_dict(dict(row)) for row in rows]
+    
+    def get_subscription_by_id(self, user_id: int, subscription_id: int) -> Optional[Subscription]:
+        """Get single subscription by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM subscriptions WHERE id = ? AND user_id = ?",
+                (subscription_id, user_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                return Subscription.from_dict(dict(row))
+            return None
+    
+    def delete_subscription(self, user_id: int, subscription_id: int) -> bool:
+        """Delete subscription by ID. Returns True if deleted."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM subscriptions WHERE id = ? AND user_id = ?",
+                (subscription_id, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def update_subscription_end_date(self, user_id: int, subscription_id: int, new_end_date) -> bool:
+        """Update subscription end date (for renewal). Returns True if updated."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE subscriptions SET end_date = ?, is_active = 1 WHERE id = ? AND user_id = ?",
+                (new_end_date.isoformat(), subscription_id, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_expiring_subscriptions(self, user_id: int, days: int = 7) -> list[Subscription]:
+        """Get subscriptions expiring within specified days."""
+        from datetime import date, timedelta
+        today = date.today()
+        end_threshold = today + timedelta(days=days)
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM subscriptions 
+                WHERE user_id = ? AND is_active = 1 
+                AND end_date >= ? AND end_date <= ?
+                ORDER BY end_date ASC
+                """,
+                (user_id, today.isoformat(), end_threshold.isoformat())
+            )
+            rows = cursor.fetchall()
+            return [Subscription.from_dict(dict(row)) for row in rows]
+    
+    def mark_subscription_synced(self, subscription_id: int) -> None:
+        """Mark subscription as synced to cloud."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE subscriptions SET synced = 1 WHERE id = ?",
+                (subscription_id,)
+            )
+            conn.commit()
+    
+    def get_pending_subscription_sync(self) -> list[Subscription]:
+        """Get subscriptions not yet synced to cloud."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM subscriptions WHERE synced = 0 ORDER BY created_at ASC"
+            )
+            rows = cursor.fetchall()
+            return [Subscription.from_dict(dict(row)) for row in rows]

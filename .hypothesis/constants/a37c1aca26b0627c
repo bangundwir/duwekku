@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\__init__.py
+# hypothesis_version: 6.148.5
+
+['EXPENSE_CATEGORIES', 'INCOME_CATEGORIES', 'Subscription', 'Transaction', 'UserPreference']

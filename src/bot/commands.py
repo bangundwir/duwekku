@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from src.database.manager import DatabaseManager
 from src.ai.provider_manager import ProviderManager
 from src.utils.exporter import TransactionExporter
+from src.models.subscription import Subscription, SUBSCRIPTION_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -19,26 +20,26 @@ WELCOME_MESSAGE = """
 Halo {name}! 👋
 
 Selamat datang di asisten keuangan pribadi Anda!
-Saya akan membantu mencatat pemasukan & pengeluaran dengan mudah menggunakan AI.
+Saya akan membantu mencatat pemasukan, pengeluaran, dan langganan dengan mudah menggunakan AI.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 🚀 *CARA PAKAI*
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Cukup ketik transaksi dengan bahasa sehari-hari:
-
-📤 *Pengeluaran:*
+*💵 Transaksi:*
 • `beli makan 50rb`
-• `bayar listrik 200rb`
-• `bensin 100k`
-
-📥 *Pemasukan:*
 • `gajian 5jt`
-• `dapat bonus 1jt`
-• `freelance 500rb`
+
+*📅 Langganan:*
+• `/addsub langganan netflix 150rb 1 bulan`
+• `/addsub berlangganan spotify 60rb setahun`
+
+*📊 Analisis:*
+• `/analysis` - Cek kesehatan keuangan
+• `/subs` - Lihat semua langganan
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-Ketik /help untuk melihat semua perintah 📖
+Ketik /help untuk panduan lengkap 📖
 """
 
 HELP_MESSAGE = """
@@ -93,6 +94,39 @@ HELP_MESSAGE = """
 /export html
 ↳ Download laporan dalam format HTML
 
+/analysis
+↳ Analisis kesehatan keuangan dengan skor dan saran
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📅 *LANGGANAN/SUBSCRIPTION:*
+
+/subs
+↳ Lihat semua langganan aktif
+
+/addsub
+↳ Tambah langganan (dengan menu interaktif)
+
+/addsub `langganan netflix 150rb 1 bulan`
+↳ Tambah dengan bahasa natural (AI parsing)
+
+/addsub `[nama]` `[jumlah]` `[mulai]` `[akhir]` `[kategori]`
+↳ Tambah langganan baru
+↳ Contoh: `/addsub Netflix 150000 2024-01-01 2024-12-31 streaming`
+
+/subs
+↳ Lihat semua langganan aktif
+
+/delsub `[id]`
+↳ Hapus langganan
+↳ Contoh: `/delsub 12345`
+
+/renewsub `[id]` `[tanggal_baru]`
+↳ Perpanjang langganan
+↳ Contoh: `/renewsub 12345 2025-12-31`
+
+/subcost
+↳ Lihat total biaya langganan bulanan
+
 ━━━━━━━━━━━━━━━━━━━━━━━
 💡 *TIPS FORMAT ANGKA:*
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -124,9 +158,12 @@ gaji, bonus, freelance, investasi, hadiah
 class CommandHandler:
     """Handles Telegram bot commands."""
 
-    def __init__(self, db_manager: DatabaseManager, provider_manager: Optional[ProviderManager] = None):
+    def __init__(self, db_manager: DatabaseManager, provider_manager: Optional[ProviderManager] = None,
+                 subscription_manager=None, financial_analyzer=None):
         self.db = db_manager
         self.provider_manager = provider_manager
+        self.subscription_manager = subscription_manager
+        self.financial_analyzer = financial_analyzer
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -138,6 +175,10 @@ class CommandHandler:
             [
                 InlineKeyboardButton("📋 History", callback_data="history"),
                 InlineKeyboardButton("📊 Summary", callback_data="summary"),
+            ],
+            [
+                InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
+                InlineKeyboardButton("📈 Analisis", callback_data="show_analysis"),
             ],
             [
                 InlineKeyboardButton("📥 Export", callback_data="show_export"),
@@ -500,6 +541,191 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
             # Do nothing, just acknowledge
             pass
         
+        # Subscription callbacks
+        elif query.data == "show_subs":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+                cost_info = self.subscription_manager.get_monthly_cost(user_id)
+                
+                def fmt(amount):
+                    return f"Rp {amount:,.0f}".replace(",", ".")
+                
+                if not subscriptions:
+                    keyboard = [[InlineKeyboardButton("➕ Tambah Langganan", callback_data="show_addsub")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(
+                        "📭 Belum ada langganan.\nTambahkan langganan pertama Anda!",
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+                    return
+                
+                lines = [
+                    "📅 *DAFTAR LANGGANAN*",
+                    "━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"💰 Total: *{fmt(cost_info['total'])}*/bulan",
+                    "",
+                ]
+                
+                status_emoji = {"active": "✅", "expiring_soon": "⚠️", "expired": "❌"}
+                for sub in sorted(subscriptions, key=lambda x: x.end_date):
+                    s_emoji = status_emoji.get(sub.status, "📦")
+                    days_text = f"{sub.days_remaining}d" if sub.days_remaining > 0 else "Expired"
+                    lines.append(f"{s_emoji} *{sub.name}* - {fmt(sub.amount)}")
+                    lines.append(f"   ⏳ {days_text} │ ID: `{sub.id}`")
+                    lines.append("")
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("➕ Tambah", callback_data="show_addsub"),
+                        InlineKeyboardButton("💰 Biaya", callback_data="show_subcost"),
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data == "show_addsub":
+            keyboard = [
+                [InlineKeyboardButton("🎬 Streaming", callback_data="addsub_cat:streaming")],
+                [InlineKeyboardButton("🖥️ Hosting/VPS", callback_data="addsub_cat:hosting")],
+                [InlineKeyboardButton("🌐 Domain", callback_data="addsub_cat:domain")],
+                [InlineKeyboardButton("💿 Software", callback_data="addsub_cat:software")],
+                [InlineKeyboardButton("📦 Lainnya", callback_data="addsub_cat:other")],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                "📅 *TAMBAH LANGGANAN*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Pilih kategori atau ketik langsung:\n\n"
+                "💡 *Contoh:*\n"
+                "`/addsub langganan netflix 150rb 1 bulan`\n"
+                "`/addsub berlangganan spotify 60rb setahun`",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        
+        elif query.data.startswith("addsub_cat:"):
+            category = query.data.split(":")[1]
+            cat_names = {
+                "streaming": "🎬 Streaming (Netflix, Spotify, dll)",
+                "hosting": "🖥️ Hosting/VPS",
+                "domain": "🌐 Domain",
+                "software": "💿 Software",
+                "other": "📦 Lainnya",
+            }
+            
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_addsub")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                f"📅 *TAMBAH {cat_names.get(category, category).upper()}*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"Ketik dengan format natural:\n\n"
+                f"💡 *Contoh:*\n"
+                f"`/addsub langganan netflix 150rb 1 bulan`\n"
+                f"`/addsub vps digitalocean 100rb 3 bulan`\n\n"
+                f"Atau format manual:\n"
+                f"`/addsub Netflix 150000 2024-01-01 2024-12-31 {category}`",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        
+        elif query.data == "show_analysis":
+            user_id = query.from_user.id
+            if self.financial_analyzer:
+                analysis = self.financial_analyzer.analyze(user_id)
+                
+                if analysis is None:
+                    keyboard = [[InlineKeyboardButton("📋 Lihat Transaksi", callback_data="history")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(
+                        "📊 *ANALISIS KEUANGAN*\n\n"
+                        "⚠️ Data tidak cukup (minimal 5 transaksi).",
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+                    return
+                
+                def fmt(amount):
+                    return f"Rp {amount:,.0f}".replace(",", ".")
+                
+                # Score visual
+                if analysis.score >= 70:
+                    score_emoji = "🟢"
+                    score_label = "Sehat"
+                elif analysis.score >= 40:
+                    score_emoji = "🟡"
+                    score_label = "Perlu Perhatian"
+                else:
+                    score_emoji = "🔴"
+                    score_label = "Perlu Perbaikan"
+                
+                score_bar = "█" * (analysis.score // 10) + "░" * (10 - analysis.score // 10)
+                trend_emoji = {"improving": "📈", "stable": "➡️", "declining": "📉"}.get(analysis.trend, "➡️")
+                
+                lines = [
+                    "📊 *ANALISIS KESEHATAN KEUANGAN*",
+                    "━━━━━━━━━━━━━━━━━━━━━━━",
+                    "",
+                    f"{score_emoji} *Skor: {analysis.score}/100* - {score_label}",
+                    f"`{score_bar}`",
+                    "",
+                    f"📥 Pemasukan: *{fmt(analysis.income_total)}*",
+                    f"📤 Pengeluaran: *{fmt(analysis.expense_total)}*",
+                    f"💵 Saldo: *{fmt(analysis.balance)}*",
+                    "",
+                    f"📊 Rasio: `{analysis.expense_ratio:.1f}%` │ {trend_emoji} Trend",
+                ]
+                
+                if analysis.warnings:
+                    lines.append("")
+                    lines.append("⚠️ " + analysis.warnings[0][:80])
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📋 History", callback_data="history"),
+                        InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
+                    ],
+                    [InlineKeyboardButton("📥 Export Lengkap", callback_data="export:html:all")],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data == "show_subcost":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                cost_info = self.subscription_manager.get_monthly_cost(user_id)
+                
+                def fmt(amount):
+                    return f"Rp {amount:,.0f}".replace(",", ".")
+                
+                cat_emoji = {
+                    "streaming": "🎬", "hosting": "🖥️", "domain": "🌐",
+                    "software": "💿", "other": "📦",
+                }
+                
+                lines = [
+                    "💰 *BIAYA LANGGANAN BULANAN*",
+                    "━━━━━━━━━━━━━━━━━━━━━━━",
+                    "",
+                    f"📊 *Total: {fmt(cost_info['total'])}/bulan*",
+                    "",
+                ]
+                
+                if cost_info["by_category"]:
+                    lines.append("*Per Kategori:*")
+                    for cat, amount in sorted(cost_info["by_category"].items(), key=lambda x: -x[1]):
+                        emoji = cat_emoji.get(cat, "📦")
+                        pct = (amount / cost_info["total"] * 100) if cost_info["total"] > 0 else 0
+                        lines.append(f"{emoji} {cat.title()}: {fmt(amount)} ({pct:.1f}%)")
+                
+                keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
         # Export callbacks
         elif query.data == "show_export":
             keyboard = [
@@ -822,6 +1048,563 @@ Pilih format export:
 💡 Buka di browser untuk melihat/cetak
 """
         await message.reply_document(
+            document=html_bytes,
+            filename=filename,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+
+    # ==================== FINANCIAL ANALYSIS COMMANDS ====================
+    
+    async def cmd_analysis(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /analysis command - show financial health analysis with interactive buttons."""
+        user_id = update.effective_user.id
+        
+        if not self.financial_analyzer:
+            await update.message.reply_text("❌ Fitur analisis belum tersedia")
+            return
+        
+        # Get analysis
+        analysis = self.financial_analyzer.analyze(user_id)
+        
+        if analysis is None:
+            keyboard = [
+                [InlineKeyboardButton("📋 Lihat Transaksi", callback_data="history")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "📊 *ANALISIS KEUANGAN*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "⚠️ Data tidak cukup untuk analisis.\n"
+                "Minimal 5 transaksi diperlukan.\n\n"
+                "💡 Tambahkan lebih banyak transaksi terlebih dahulu.",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Score emoji and visual bar
+        if analysis.score >= 70:
+            score_emoji = "🟢"
+            score_label = "Sehat"
+            score_bar = "█" * (analysis.score // 10) + "░" * (10 - analysis.score // 10)
+        elif analysis.score >= 40:
+            score_emoji = "🟡"
+            score_label = "Perlu Perhatian"
+            score_bar = "█" * (analysis.score // 10) + "░" * (10 - analysis.score // 10)
+        else:
+            score_emoji = "🔴"
+            score_label = "Perlu Perbaikan"
+            score_bar = "█" * (analysis.score // 10) + "░" * (10 - analysis.score // 10)
+        
+        # Trend emoji
+        trend_emoji = {"improving": "📈", "stable": "➡️", "declining": "📉"}.get(analysis.trend, "➡️")
+        trend_text = {"improving": "Membaik", "stable": "Stabil", "declining": "Menurun"}.get(analysis.trend, "Stabil")
+        
+        # Format amounts
+        def fmt(amount):
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        # Build message
+        lines = [
+            "📊 *ANALISIS KESEHATAN KEUANGAN*",
+            "━━━━━━━━━━━━━━━━━━━━━━━",
+            "",
+            f"{score_emoji} *Skor: {analysis.score}/100* - {score_label}",
+            f"`{score_bar}`",
+            "",
+            "━━━━━━━━━━━━━━━━━━━━━━━",
+            "*💰 RINGKASAN BULAN INI*",
+            "",
+            f"📥 Pemasukan: *{fmt(analysis.income_total)}*",
+            f"📤 Pengeluaran: *{fmt(analysis.expense_total)}*",
+            f"💵 Saldo: *{fmt(analysis.balance)}*",
+            "",
+            f"📊 Rasio Pengeluaran: `{analysis.expense_ratio:.1f}%`",
+            f"💎 Tingkat Tabungan: `{analysis.savings_rate:.1f}%`",
+            f"{trend_emoji} Trend: *{trend_text}*",
+        ]
+        
+        # Top categories with visual bars
+        if analysis.top_categories:
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("*💸 TOP 3 PENGELUARAN*")
+            lines.append("")
+            for i, (cat, amount, pct) in enumerate(analysis.top_categories[:3], 1):
+                bar_len = int(pct / 10)
+                bar = "▓" * bar_len + "░" * (10 - bar_len)
+                lines.append(f"{i}. *{cat.title()}*")
+                lines.append(f"   {fmt(amount)} ({pct:.1f}%)")
+                lines.append(f"   `{bar}`")
+        
+        # Warnings
+        if analysis.warnings:
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("*⚠️ PERINGATAN*")
+            for w in analysis.warnings[:2]:
+                lines.append(f"• {w}")
+        
+        # Suggestions (shortened)
+        if analysis.suggestions:
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("*💡 SARAN*")
+            for s in analysis.suggestions[:2]:
+                # Shorten long suggestions
+                if len(s) > 100:
+                    s = s[:100] + "..."
+                lines.append(f"• {s}")
+        
+        # Action buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 History", callback_data="history"),
+                InlineKeyboardButton("📊 Summary", callback_data="summary"),
+            ],
+            [
+                InlineKeyboardButton("📅 Langganan", callback_data="show_subs"),
+                InlineKeyboardButton("📥 Export", callback_data="show_export"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+
+    # ==================== SUBSCRIPTION COMMANDS ====================
+    
+    async def cmd_addsub(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /addsub command - with AI parsing support."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        args = context.args or []
+        
+        if not args:
+            # Show interactive menu
+            keyboard = [
+                [InlineKeyboardButton("🎬 Streaming", callback_data="addsub_cat:streaming")],
+                [InlineKeyboardButton("🖥️ Hosting/VPS", callback_data="addsub_cat:hosting")],
+                [InlineKeyboardButton("🌐 Domain", callback_data="addsub_cat:domain")],
+                [InlineKeyboardButton("💿 Software", callback_data="addsub_cat:software")],
+                [InlineKeyboardButton("📦 Lainnya", callback_data="addsub_cat:other")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "📅 *TAMBAH LANGGANAN*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Pilih kategori atau ketik langsung:\n\n"
+                "💡 *Contoh natural:*\n"
+                "• `langganan netflix 150rb 1 bulan`\n"
+                "• `berlangganan spotify 60rb setahun`\n"
+                "• `vps digitalocean 100rb 3 bulan`\n\n"
+                "Atau gunakan format:\n"
+                "`/addsub [nama] [jumlah] [mulai] [akhir] [kategori]`",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Check if it's natural language (contains words like "langganan", "bulan", etc)
+        full_text = " ".join(args)
+        is_natural = any(word in full_text.lower() for word in ["langganan", "berlangganan", "bulan", "tahun", "subscribe"])
+        
+        if is_natural and self.provider_manager:
+            # Use AI to parse
+            await update.message.chat.send_action("typing")
+            parsed = self.provider_manager.parse_subscription(user_id, full_text)
+            
+            if parsed and parsed.is_valid():
+                from dateutil.relativedelta import relativedelta
+                start_date = date.today()
+                end_date = start_date + relativedelta(months=parsed.duration_months)
+                
+                sub = Subscription(
+                    user_id=user_id,
+                    name=parsed.name,
+                    amount=parsed.amount,
+                    category=parsed.category,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                
+                sub_id = self.subscription_manager.add_subscription(sub)
+                sub.id = sub_id
+                
+                # Show with action buttons
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📋 Lihat Semua", callback_data="show_subs"),
+                        InlineKeyboardButton("➕ Tambah Lagi", callback_data="show_addsub"),
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"✅ *LANGGANAN DITAMBAHKAN*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"{sub.format_display()}",
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+                return
+        
+        # Manual format: /addsub name amount start end [category]
+        if len(args) < 4:
+            await update.message.reply_text(
+                "❌ *FORMAT SALAH*\n\n"
+                "Gunakan:\n"
+                "`/addsub [nama] [jumlah] [mulai] [akhir] [kategori]`\n\n"
+                "*Atau ketik natural:*\n"
+                "`/addsub langganan netflix 150rb 1 bulan`\n\n"
+                "*Kategori:* streaming, hosting, domain, software, other",
+                parse_mode="Markdown"
+            )
+            return
+        
+        try:
+            name = args[0]
+            amount = float(args[1].replace(".", "").replace(",", ""))
+            start_date = date.fromisoformat(args[2])
+            end_date = date.fromisoformat(args[3])
+            category = args[4].lower() if len(args) > 4 else "other"
+            
+            if category not in SUBSCRIPTION_CATEGORIES:
+                category = "other"
+            
+            if end_date < start_date:
+                await update.message.reply_text("❌ Tanggal berakhir harus setelah tanggal mulai")
+                return
+            
+            if amount <= 0:
+                await update.message.reply_text("❌ Jumlah harus lebih dari 0")
+                return
+            
+            sub = Subscription(
+                user_id=user_id,
+                name=name,
+                amount=amount,
+                category=category,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            
+            sub_id = self.subscription_manager.add_subscription(sub)
+            sub.id = sub_id
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("📋 Lihat Semua", callback_data="show_subs"),
+                    InlineKeyboardButton("➕ Tambah Lagi", callback_data="show_addsub"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"✅ *LANGGANAN DITAMBAHKAN*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{sub.format_display()}",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            
+        except ValueError:
+            await update.message.reply_text(
+                f"❌ Format tidak valid.\n\n"
+                f"Pastikan:\n"
+                f"• Jumlah adalah angka\n"
+                f"• Tanggal format YYYY-MM-DD\n\n"
+                f"Contoh: `/addsub Netflix 150000 2024-01-01 2024-12-31 streaming`",
+                parse_mode="Markdown"
+            )
+
+    async def cmd_subs(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /subs command - list all subscriptions with interactive buttons."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+        
+        if not subscriptions:
+            keyboard = [[InlineKeyboardButton("➕ Tambah Langganan", callback_data="show_addsub")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "📭 *BELUM ADA LANGGANAN*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Tambahkan langganan pertama Anda!",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Group by category
+        by_category = self.subscription_manager.get_by_category(user_id)
+        cost_info = self.subscription_manager.get_monthly_cost(user_id)
+        expiring = self.subscription_manager.get_expiring_soon(user_id, days=7)
+        
+        def fmt(amount):
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        lines = [
+            "📅 *DAFTAR LANGGANAN*",
+            "━━━━━━━━━━━━━━━━━━━━━━━",
+            f"💰 Total Bulanan: *{fmt(cost_info['total'])}*",
+            f"📊 Jumlah: {cost_info['count']} langganan aktif",
+        ]
+        
+        if expiring:
+            lines.append(f"⚠️ {len(expiring)} akan berakhir dalam 7 hari!")
+        
+        lines.append("")
+        
+        # Category emoji
+        cat_emoji = {
+            "streaming": "🎬",
+            "hosting": "🖥️",
+            "domain": "🌐",
+            "software": "💿",
+            "other": "📦",
+        }
+        
+        status_emoji = {
+            "active": "✅",
+            "expiring_soon": "⚠️",
+            "expired": "❌",
+        }
+        
+        for category, subs in sorted(by_category.items()):
+            emoji = cat_emoji.get(category, "📦")
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            
+            lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"{emoji} *{category.upper()}* ({fmt(cat_total)}/bln)")
+            lines.append("")
+            
+            for sub in sorted(subs, key=lambda x: x.end_date):
+                s_emoji = status_emoji.get(sub.status, "📦")
+                days_text = f"{sub.days_remaining}d" if sub.days_remaining > 0 else "Expired"
+                lines.append(f"{s_emoji} *{sub.name}*")
+                lines.append(f"   💵 {fmt(sub.amount)} │ ⏳ {days_text} │ ID: `{sub.id}`")
+                lines.append("")
+        
+        # Action buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("➕ Tambah", callback_data="show_addsub"),
+                InlineKeyboardButton("💰 Biaya", callback_data="show_subcost"),
+            ],
+            [
+                InlineKeyboardButton("📥 Export", callback_data="export:html:all"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+
+    async def cmd_delsub(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /delsub [id] command."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        args = context.args or []
+        
+        if not args:
+            await update.message.reply_text(
+                "❌ *FORMAT SALAH*\n\n"
+                "Gunakan: `/delsub [id]`\n"
+                "Contoh: `/delsub 12345`\n\n"
+                "💡 Lihat ID di `/subs`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        try:
+            sub_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text("❌ ID harus berupa angka")
+            return
+        
+        # Get subscription first
+        sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+        if not sub:
+            await update.message.reply_text(
+                f"❌ Langganan dengan ID `{sub_id}` tidak ditemukan\n\n"
+                f"💡 Cek ID yang benar di `/subs`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        if self.subscription_manager.delete_subscription(user_id, sub_id):
+            await update.message.reply_text(
+                f"✅ *LANGGANAN DIHAPUS*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"🗑️ {sub.name} berhasil dihapus",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text("❌ Gagal menghapus langganan")
+
+    async def cmd_renewsub(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /renewsub [id] [new_end_date] command."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        args = context.args or []
+        
+        if len(args) < 2:
+            await update.message.reply_text(
+                "❌ *FORMAT SALAH*\n\n"
+                "Gunakan: `/renewsub [id] [tanggal_baru]`\n"
+                "Contoh: `/renewsub 12345 2025-12-31`\n\n"
+                "💡 Lihat ID di `/subs`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        try:
+            sub_id = int(args[0])
+            new_end_date = date.fromisoformat(args[1])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Format tidak valid.\n"
+                "ID harus angka, tanggal format YYYY-MM-DD",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Get subscription first
+        sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+        if not sub:
+            await update.message.reply_text(
+                f"❌ Langganan dengan ID `{sub_id}` tidak ditemukan",
+                parse_mode="Markdown"
+            )
+            return
+        
+        if self.subscription_manager.renew_subscription(user_id, sub_id, new_end_date):
+            # Get updated subscription
+            updated_sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+            await update.message.reply_text(
+                f"✅ *LANGGANAN DIPERPANJANG*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{updated_sub.format_display()}",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text("❌ Gagal memperpanjang langganan")
+
+    async def cmd_subcost(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /subcost command - show subscription costs."""
+        user_id = update.effective_user.id
+        
+        if not self.subscription_manager:
+            await update.message.reply_text("❌ Fitur subscription belum tersedia")
+            return
+        
+        cost_info = self.subscription_manager.get_monthly_cost(user_id)
+        
+        def fmt(amount):
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        if cost_info["count"] == 0:
+            await update.message.reply_text(
+                "📭 Belum ada langganan aktif.\n"
+                "Tambahkan dengan `/addsub`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Category emoji
+        cat_emoji = {
+            "streaming": "🎬",
+            "hosting": "🖥️",
+            "domain": "🌐",
+            "software": "💿",
+            "other": "📦",
+        }
+        
+        lines = [
+            "💰 *BIAYA LANGGANAN BULANAN*",
+            "━━━━━━━━━━━━━━━━━━━━━━━",
+            "",
+            f"📊 *Total: {fmt(cost_info['total'])}/bulan*",
+            "",
+            "━━━━━━━━━━━━━━━━━━━━━━━",
+            "*Per Kategori:*",
+            "",
+        ]
+        
+        for category, amount in sorted(cost_info["by_category"].items(), key=lambda x: -x[1]):
+            emoji = cat_emoji.get(category, "📦")
+            pct = (amount / cost_info["total"] * 100) if cost_info["total"] > 0 else 0
+            lines.append(f"{emoji} {category.title()}: {fmt(amount)} ({pct:.1f}%)")
+        
+        lines.append("")
+        lines.append(f"📝 Total {cost_info['count']} langganan aktif")
+        
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    async def cmd_export_full(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /exportfull command - export full HTML report with analysis and subscriptions."""
+        user_id = update.effective_user.id
+        
+        await update.message.reply_text("⏳ Sedang menyiapkan laporan lengkap...")
+        
+        # Get all data
+        transactions = self.db.get_all_transactions(user_id)
+        
+        subscriptions = []
+        if self.subscription_manager:
+            subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+        
+        analysis = None
+        if self.financial_analyzer:
+            analysis = self.financial_analyzer.analyze(user_id)
+        
+        if not transactions and not subscriptions:
+            await update.message.reply_text("📭 Tidak ada data untuk diexport")
+            return
+        
+        # Generate full HTML
+        html_content = TransactionExporter.to_html_full(
+            transactions=transactions,
+            subscriptions=subscriptions,
+            analysis=analysis,
+            title="Laporan Keuangan Lengkap"
+        )
+        
+        # Send as document
+        filename = f"laporan_lengkap_{datetime.now().strftime('%Y%m%d')}.html"
+        html_bytes = io.BytesIO(html_content.encode('utf-8'))
+        html_bytes.name = filename
+        
+        caption = f"""
+✅ *EXPORT LAPORAN LENGKAP*
+━━━━━━━━━━━━━━━━━━━━━━━
+🌐 Format: HTML Interaktif
+📝 Transaksi: {len(transactions)}
+📅 Langganan: {len(subscriptions)}
+📊 Analisis: {'Ya' if analysis else 'Tidak'}
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Buka di browser untuk melihat
+"""
+        await update.message.reply_document(
             document=html_bytes,
             filename=filename,
             caption=caption,

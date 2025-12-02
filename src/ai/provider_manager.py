@@ -131,6 +131,13 @@ class ProviderManager:
             return provider.parse_transaction(message)
         return None
     
+    def parse_subscription(self, user_id: int, message: str):
+        """Parse subscription using user's preferred provider."""
+        provider = self.get_provider(user_id)
+        if provider:
+            return provider.parse_subscription(message)
+        return None
+    
     def get_user_provider_info(self, user_id: int) -> Optional[ProviderInfo]:
         """Get info about user's current provider."""
         provider = self.get_provider(user_id)

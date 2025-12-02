@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\config\settings.py
+# hypothesis_version: 6.148.5
+
+[4000, '.env', 'gemini-2.5-flash', 'groq', 'isrgrootx1.pem', 'test', 'utf-8']

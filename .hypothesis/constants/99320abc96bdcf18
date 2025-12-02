@@ -1,0 +1,4 @@
+# file: F:\2026\A-Project\ProjectPython\duwek-ku\src\models\user_preference.py
+# hypothesis_version: 6.148.5
+
+['UserPreference', 'default', 'model', 'provider', 'updated_at', 'user_id']

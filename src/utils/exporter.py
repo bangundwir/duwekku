@@ -5,9 +5,13 @@ import io
 import json
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from src.models.transaction import Transaction
+from src.models.subscription import Subscription
+
+if TYPE_CHECKING:
+    from src.analysis.analyzer import FinancialHealth
 
 
 class TransactionExporter:
@@ -453,3 +457,410 @@ document.addEventListener('DOMContentLoaded', () => {{
 </script>
 </body>
 </html>'''
+
+    @staticmethod
+    def to_html_full(
+        transactions: list[Transaction],
+        subscriptions: list[Subscription],
+        analysis: Optional["FinancialHealth"],
+        title: str = "Laporan Keuangan Lengkap"
+    ) -> str:
+        """Generate comprehensive HTML report with transactions, subscriptions, and analysis."""
+        # Calculate totals
+        total_income = sum(t.amount for t in transactions if t.type == "income")
+        total_expense = sum(t.amount for t in transactions if t.type == "expense")
+        balance = total_income - total_expense
+        
+        breakdown = TransactionExporter._calculate_category_breakdown(transactions)
+        
+        def fmt(amount: float) -> str:
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        # Get unique categories
+        all_categories = sorted(set(t.category.title() for t in transactions))
+        category_options = "".join(f'<option value="{c}">{c}</option>' for c in all_categories)
+        
+        # Generate transaction data as JSON
+        tx_data = []
+        for t in transactions:
+            tx_data.append({
+                "id": t.id,
+                "date": t.created_at.isoformat(),
+                "type": t.type,
+                "category": t.category.title(),
+                "amount": t.amount,
+                "description": t.description
+            })
+        tx_json = json.dumps(tx_data)
+        
+        # Generate subscription data as JSON
+        sub_data = []
+        for s in subscriptions:
+            sub_data.append({
+                "id": s.id,
+                "name": s.name,
+                "amount": s.amount,
+                "category": s.category,
+                "start_date": s.start_date.isoformat(),
+                "end_date": s.end_date.isoformat(),
+                "status": s.status,
+                "days_remaining": s.days_remaining,
+            })
+        sub_json = json.dumps(sub_data)
+        
+        # Chart data
+        expense_labels = json.dumps(list(breakdown["expense"].keys()))
+        expense_values = json.dumps(list(breakdown["expense"].values()))
+        income_labels = json.dumps(list(breakdown["income"].keys()))
+        income_values = json.dumps(list(breakdown["income"].values()))
+        
+        balance_class = "positive" if balance >= 0 else "negative"
+        balance_sign = "+" if balance >= 0 else ""
+        
+        # Analysis section
+        analysis_html = TransactionExporter._generate_analysis_section(analysis, fmt) if analysis else ""
+        
+        # Subscription section
+        subscription_html = TransactionExporter._generate_subscription_section(subscriptions, fmt)
+        
+        now = datetime.now()
+        
+        return f'''<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {TransactionExporter._get_full_styles()}
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>💰 {title}</h1>
+        <div class="subtitle">Diekspor {now.strftime("%d %B %Y, %H:%M")}</div>
+    </div>
+    
+    {analysis_html}
+    
+    <div class="summary">
+        <div class="summary-card income">
+            <div class="label">Pemasukan</div>
+            <div class="value">+{fmt(total_income)}</div>
+        </div>
+        <div class="summary-card expense">
+            <div class="label">Pengeluaran</div>
+            <div class="value">-{fmt(total_expense)}</div>
+        </div>
+        <div class="summary-card balance">
+            <div class="label">Saldo</div>
+            <div class="value {balance_class}">{balance_sign}{fmt(balance)}</div>
+        </div>
+    </div>
+    
+    <div class="nav-tabs">
+        <div class="nav-tab active" onclick="showTab('overview')">📊 Ringkasan</div>
+        <div class="nav-tab" onclick="showTab('subscriptions')">📅 Langganan</div>
+        <div class="nav-tab" onclick="showTab('transactions')">📋 Transaksi</div>
+    </div>
+    
+    <div id="overview" class="tab-content active">
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>💸 Pengeluaran per Kategori</h3>
+                <div class="chart-container"><canvas id="expenseChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>💰 Pemasukan per Kategori</h3>
+                <div class="chart-container"><canvas id="incomeChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="subscriptions" class="tab-content">
+        {subscription_html}
+    </div>
+    
+    <div id="transactions" class="tab-content">
+        <div class="section-title">📋 Daftar Transaksi ({len(transactions)} total)</div>
+        <div class="tx-list" id="txList"></div>
+    </div>
+    
+    <div class="footer">
+        <p>💰 Money Tracker Bot</p>
+        <p>{len(transactions)} transaksi • {len(subscriptions)} langganan</p>
+    </div>
+</div>
+
+<script>
+const allTransactions = {tx_json};
+const allSubscriptions = {sub_json};
+const chartColors = ['#ef4444','#f97316','#f59e0b','#84cc16','#22c55e','#14b8a6','#06b6d4','#3b82f6','#6366f1','#8b5cf6'];
+const incomeColors = ['#10b981','#34d399','#6ee7b7','#a7f3d0','#d1fae5'];
+
+function fmt(n) {{ return 'Rp ' + n.toLocaleString('id-ID').replace(/,/g, '.'); }}
+
+function showTab(id) {{
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+}}
+
+function initCharts() {{
+    const expenseByCategory = {{}};
+    const incomeByCategory = {{}};
+    
+    allTransactions.forEach(t => {{
+        if (t.type === 'expense') expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount;
+        else incomeByCategory[t.category] = (incomeByCategory[t.category] || 0) + t.amount;
+    }});
+    
+    const opts = {{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{padding:8,usePointStyle:true,font:{{size:10}},color:'#9ca3af'}}}}}},cutout:'55%'}};
+    
+    const expLabels = Object.keys(expenseByCategory);
+    const expValues = Object.values(expenseByCategory);
+    if (expLabels.length) {{
+        new Chart(document.getElementById('expenseChart'), {{
+            type:'doughnut',data:{{labels:expLabels,datasets:[{{data:expValues,backgroundColor:chartColors.slice(0,expLabels.length),borderWidth:0}}]}},options:opts
+        }});
+    }}
+    
+    const incLabels = Object.keys(incomeByCategory);
+    const incValues = Object.values(incomeByCategory);
+    if (incLabels.length) {{
+        new Chart(document.getElementById('incomeChart'), {{
+            type:'doughnut',data:{{labels:incLabels,datasets:[{{data:incValues,backgroundColor:incomeColors.slice(0,incLabels.length),borderWidth:0}}]}},options:opts
+        }});
+    }}
+}}
+
+function renderTransactions() {{
+    const sorted = [...allTransactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+    const html = sorted.map(t => {{
+        const d = new Date(t.date);
+        const dateStr = d.toLocaleDateString('id-ID', {{day:'2-digit',month:'short',year:'2-digit'}});
+        const emoji = t.type === 'income' ? '💰' : '💸';
+        const sign = t.type === 'income' ? '+' : '-';
+        return `<div class="tx-card"><div class="tx-icon">${{emoji}}</div><div class="tx-info"><div class="tx-desc">${{t.description}}</div><div class="tx-meta"><span class="tx-tag">${{t.category}}</span><span>${{dateStr}}</span></div></div><div class="tx-amount ${{t.type}}">${{sign}}${{fmt(t.amount)}}</div></div>`;
+    }}).join('');
+    document.getElementById('txList').innerHTML = html || '<div class="empty-state">Tidak ada transaksi</div>';
+}}
+
+document.addEventListener('DOMContentLoaded', () => {{
+    initCharts();
+    renderTransactions();
+}});
+</script>
+</body>
+</html>'''
+
+    @staticmethod
+    def _generate_analysis_section(analysis: "FinancialHealth", fmt) -> str:
+        """Generate HTML section for financial analysis."""
+        if not analysis:
+            return ""
+        
+        # Score color based on value
+        if analysis.score >= 70:
+            score_color = "#10b981"  # green
+            score_label = "Sehat"
+        elif analysis.score >= 40:
+            score_color = "#f59e0b"  # yellow
+            score_label = "Perlu Perhatian"
+        else:
+            score_color = "#ef4444"  # red
+            score_label = "Perlu Perbaikan"
+        
+        # Trend emoji
+        trend_emoji = {"improving": "📈", "stable": "➡️", "declining": "📉"}.get(analysis.trend, "➡️")
+        trend_text = {"improving": "Membaik", "stable": "Stabil", "declining": "Menurun"}.get(analysis.trend, "Stabil")
+        
+        # Warnings HTML
+        warnings_html = ""
+        if analysis.warnings:
+            warnings_html = '<div class="warnings">'
+            for w in analysis.warnings:
+                warnings_html += f'<div class="warning-item">{w}</div>'
+            warnings_html += '</div>'
+        
+        # Suggestions HTML
+        suggestions_html = ""
+        if analysis.suggestions:
+            suggestions_html = '<div class="suggestions">'
+            for s in analysis.suggestions:
+                suggestions_html += f'<div class="suggestion-item">{s}</div>'
+            suggestions_html += '</div>'
+        
+        return f'''
+    <div class="analysis-section">
+        <div class="section-title">📊 Analisis Kesehatan Keuangan</div>
+        <div class="health-score-card">
+            <div class="score-circle" style="border-color: {score_color}">
+                <div class="score-value" style="color: {score_color}">{analysis.score}</div>
+                <div class="score-label">{score_label}</div>
+            </div>
+            <div class="score-details">
+                <div class="detail-item">
+                    <span class="detail-label">Rasio Pengeluaran</span>
+                    <span class="detail-value">{analysis.expense_ratio:.1f}%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Tingkat Tabungan</span>
+                    <span class="detail-value">{analysis.savings_rate:.1f}%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Trend</span>
+                    <span class="detail-value">{trend_emoji} {trend_text}</span>
+                </div>
+            </div>
+        </div>
+        {warnings_html}
+        {suggestions_html}
+    </div>'''
+
+    @staticmethod
+    def _generate_subscription_section(subscriptions: list[Subscription], fmt) -> str:
+        """Generate HTML section for subscriptions."""
+        if not subscriptions:
+            return '<div class="empty-state"><div class="icon">📭</div>Tidak ada langganan</div>'
+        
+        # Group by category
+        by_category = {}
+        total_cost = 0
+        for sub in subscriptions:
+            if sub.category not in by_category:
+                by_category[sub.category] = []
+            by_category[sub.category].append(sub)
+            if sub.status != "expired":
+                total_cost += sub.amount
+        
+        # Category emoji mapping
+        cat_emoji = {
+            "streaming": "🎬",
+            "hosting": "🖥️",
+            "domain": "🌐",
+            "software": "💿",
+            "other": "📦",
+        }
+        
+        # Status emoji
+        status_emoji = {
+            "active": "✅",
+            "expiring_soon": "⚠️",
+            "expired": "❌",
+        }
+        
+        html = f'''
+        <div class="section-title">📅 Langganan Aktif</div>
+        <div class="sub-summary">
+            <div class="sub-total">Total Biaya Bulanan: <strong>{fmt(total_cost)}</strong></div>
+        </div>
+        '''
+        
+        for category, subs in sorted(by_category.items()):
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            emoji = cat_emoji.get(category, "📦")
+            
+            html += f'''
+            <div class="sub-category">
+                <div class="sub-cat-header">
+                    <span>{emoji} {category.title()}</span>
+                    <span class="sub-cat-total">{fmt(cat_total)}/bulan</span>
+                </div>
+                <div class="sub-list">
+            '''
+            
+            for sub in sorted(subs, key=lambda x: x.end_date):
+                s_emoji = status_emoji.get(sub.status, "📦")
+                status_class = sub.status.replace("_", "-")
+                days_text = f"{sub.days_remaining} hari" if sub.days_remaining > 0 else "Berakhir"
+                
+                html += f'''
+                <div class="sub-card {status_class}">
+                    <div class="sub-info">
+                        <div class="sub-name">{s_emoji} {sub.name}</div>
+                        <div class="sub-dates">
+                            {sub.start_date.strftime("%d/%m/%Y")} - {sub.end_date.strftime("%d/%m/%Y")}
+                            <span class="sub-remaining">({days_text})</span>
+                        </div>
+                    </div>
+                    <div class="sub-amount">{fmt(sub.amount)}</div>
+                </div>
+                '''
+            
+            html += '</div></div>'
+        
+        return html
+
+    @staticmethod
+    def _get_full_styles() -> str:
+        """Get CSS styles for full HTML export."""
+        return '''<style>
+:root{--primary:#6366f1;--income:#10b981;--expense:#ef4444;--warning:#f59e0b;--bg:#0f0f1a;--card:#1a1a2e;--text:#fff;--text-muted:#9ca3af;--border:#2d2d4a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+.container{max-width:900px;margin:0 auto}
+.header{background:linear-gradient(135deg,var(--card),#16213e);padding:24px;text-align:center;border-bottom:1px solid var(--border)}
+.header h1{font-size:22px;margin-bottom:4px}
+.header .subtitle{font-size:12px;color:var(--text-muted)}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px}
+.summary-card{background:var(--card);border-radius:12px;padding:16px;text-align:center;border:1px solid var(--border)}
+.summary-card .label{font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.summary-card .value{font-size:18px;font-weight:700}
+.summary-card.income .value{color:var(--income)}
+.summary-card.expense .value{color:var(--expense)}
+.summary-card.balance .value.positive{color:var(--income)}
+.summary-card.balance .value.negative{color:var(--expense)}
+.nav-tabs{display:flex;background:var(--card);padding:6px;margin:16px;border-radius:10px;gap:6px}
+.nav-tab{flex:1;padding:12px;text-align:center;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-muted)}
+.nav-tab.active{background:var(--primary);color:#fff}
+.tab-content{display:none;padding:16px}
+.tab-content.active{display:block}
+.section-title{font-size:15px;font-weight:600;margin-bottom:14px}
+.charts-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.chart-card{background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--border)}
+.chart-card h3{font-size:14px;margin-bottom:12px;text-align:center}
+.chart-container{height:200px;position:relative}
+.tx-list{display:flex;flex-direction:column;gap:8px}
+.tx-card{background:var(--card);border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+.tx-icon{font-size:20px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--bg)}
+.tx-info{flex:1;min-width:0}
+.tx-desc{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx-meta{display:flex;gap:6px;margin-top:3px;font-size:11px;color:var(--text-muted)}
+.tx-tag{background:var(--bg);padding:2px 6px;border-radius:4px;font-size:10px}
+.tx-amount{font-size:14px;font-weight:700}
+.tx-amount.income{color:var(--income)}
+.tx-amount.expense{color:var(--expense)}
+.analysis-section{background:var(--card);margin:16px;padding:20px;border-radius:12px;border:1px solid var(--border)}
+.health-score-card{display:flex;gap:24px;align-items:center;margin-bottom:16px}
+.score-circle{width:100px;height:100px;border-radius:50%;border:4px solid;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.score-value{font-size:32px;font-weight:700}
+.score-label{font-size:11px;color:var(--text-muted)}
+.score-details{flex:1}
+.detail-item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
+.detail-label{color:var(--text-muted);font-size:13px}
+.detail-value{font-weight:600;font-size:13px}
+.warnings{margin-top:12px}
+.warning-item{background:rgba(239,68,68,0.1);border-left:3px solid var(--expense);padding:10px 12px;margin-bottom:8px;border-radius:0 8px 8px 0;font-size:13px}
+.suggestions{margin-top:12px}
+.suggestion-item{background:rgba(99,102,241,0.1);border-left:3px solid var(--primary);padding:10px 12px;margin-bottom:8px;border-radius:0 8px 8px 0;font-size:13px;white-space:pre-line}
+.sub-summary{background:var(--card);padding:16px;border-radius:10px;margin-bottom:16px;border:1px solid var(--border)}
+.sub-total{font-size:14px}
+.sub-category{margin-bottom:16px}
+.sub-cat-header{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-weight:600;font-size:14px}
+.sub-cat-total{color:var(--text-muted)}
+.sub-list{margin-top:8px}
+.sub-card{background:var(--card);border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border:1px solid var(--border)}
+.sub-card.expiring-soon{border-color:var(--warning)}
+.sub-card.expired{opacity:0.6}
+.sub-name{font-weight:500;font-size:14px}
+.sub-dates{font-size:12px;color:var(--text-muted);margin-top:4px}
+.sub-remaining{color:var(--warning)}
+.sub-amount{font-weight:700;font-size:15px}
+.empty-state{text-align:center;padding:40px;color:var(--text-muted)}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+.footer{text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);margin-top:16px}
+@media(max-width:768px){.charts-grid{grid-template-columns:1fr}.health-score-card{flex-direction:column;text-align:center}}
+</style>'''
