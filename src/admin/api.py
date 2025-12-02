@@ -77,6 +77,7 @@ class CreatePlanRequest(BaseModel):
     price: float = 0
     duration_days: int = 30
     features: List[str] = []
+    is_default: bool = False
 
 
 class PlanResponse(BaseModel):
@@ -90,6 +91,7 @@ class PlanResponse(BaseModel):
     duration_days: int
     features: List[str]
     is_active: bool
+    is_default: bool
 
 
 class StatsResponse(BaseModel):
@@ -358,9 +360,37 @@ def create_admin_api(
                 duration_days=p.duration_days,
                 features=p.features,
                 is_active=p.is_active,
+                is_default=p.is_default,
             )
             for p in plans
         ]
+    
+    @app.get("/api/admin/plans/default")
+    async def get_default_plan(session=Depends(get_current_admin)):
+        """Get the default plan for new users."""
+        plan = db.get_default_plan()
+        if not plan:
+            raise HTTPException(status_code=404, detail="No default plan found")
+        return PlanResponse(
+            id=plan.id,
+            name=plan.name,
+            hourly_query_limit=plan.hourly_query_limit,
+            daily_query_limit=plan.daily_query_limit,
+            monthly_query_limit=plan.monthly_query_limit,
+            reset_hours=plan.reset_hours,
+            price=plan.price,
+            duration_days=plan.duration_days,
+            features=plan.features,
+            is_active=plan.is_active,
+            is_default=plan.is_default,
+        )
+    
+    @app.put("/api/admin/plans/{plan_id}/default")
+    async def set_default_plan(plan_id: int, session=Depends(get_current_admin)):
+        """Set a plan as the default for new users."""
+        if not db.set_default_plan(plan_id):
+            raise HTTPException(status_code=404, detail="Plan not found")
+        return {"message": f"Plan {plan_id} set as default"}
     
     @app.post("/api/admin/plans")
     async def create_plan(request: CreatePlanRequest, session=Depends(get_current_admin)):
@@ -374,6 +404,7 @@ def create_admin_api(
             price=request.price,
             duration_days=request.duration_days,
             features=request.features,
+            is_default=request.is_default,
         )
         
         return PlanResponse(
@@ -387,6 +418,7 @@ def create_admin_api(
             duration_days=plan.duration_days,
             features=plan.features,
             is_active=plan.is_active,
+            is_default=plan.is_default,
         )
     
     @app.put("/api/admin/plans/{plan_id}")

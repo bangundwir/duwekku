@@ -44,6 +44,7 @@ class SubscriptionService:
         hourly_query_limit: int = 5,
         reset_hours: int = 1,
         features: List[str] = None,
+        is_default: bool = False,
     ) -> SubscriptionPlan:
         """Create a new subscription plan."""
         plan = SubscriptionPlan(
@@ -55,10 +56,19 @@ class SubscriptionService:
             price=price,
             duration_days=duration_days,
             features=features or [],
+            is_default=is_default,
         )
         plan_id = self.db.create_subscription_plan(plan)
         plan.id = plan_id
         return plan
+    
+    def get_default_plan(self) -> Optional[SubscriptionPlan]:
+        """Get the default plan for new users."""
+        return self.db.get_default_plan()
+    
+    def set_default_plan(self, plan_id: int) -> bool:
+        """Set a plan as the default for new users."""
+        return self.db.set_default_plan(plan_id)
     
     def update_plan(self, plan_id: int, **kwargs) -> bool:
         """Update a subscription plan."""

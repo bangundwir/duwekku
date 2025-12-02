@@ -18,6 +18,7 @@ class SubscriptionPlan:
     reset_hours: int = 1                            # Hours until hourly reset
     features: List[str] = field(default_factory=list)  # List of features
     is_active: bool = True
+    is_default: bool = False                        # Default plan for new users
     created_at: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> dict:
@@ -33,6 +34,7 @@ class SubscriptionPlan:
             "duration_days": self.duration_days,
             "features": json.dumps(self.features) if self.features else "[]",
             "is_active": self.is_active,
+            "is_default": self.is_default,
             "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
         }
     
@@ -63,6 +65,7 @@ class SubscriptionPlan:
             duration_days=data.get("duration_days", 30),
             features=features if isinstance(features, list) else [],
             is_active=bool(data.get("is_active", True)),
+            is_default=bool(data.get("is_default", False)),
             created_at=created_at,
         )
     
@@ -94,6 +97,7 @@ DEFAULT_PLANS = [
         price=0,
         duration_days=0,  # Unlimited
         features=["5 query/jam", "10 query/hari", "100 query/bulan", "Fitur dasar"],
+        is_default=True,  # Default plan for new users
     ),
     SubscriptionPlan(
         name="Basic",

@@ -332,7 +332,10 @@
                             <!-- Card Header -->
                             <div class="p-5 border-b border-gray-100">
                                 <div class="flex justify-between items-start mb-2">
-                                    <h4 class="text-lg font-bold text-gray-800" x-text="plan.name"></h4>
+                                    <div class="flex items-center gap-2">
+                                        <h4 class="text-lg font-bold text-gray-800" x-text="plan.name"></h4>
+                                        <span x-show="plan.is_default" class="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">⭐ Default</span>
+                                    </div>
                                     <span x-show="plan.is_active" class="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Active</span>
                                     <span x-show="!plan.is_active" class="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">Inactive</span>
                                 </div>
@@ -379,20 +382,26 @@
                             </div>
                             
                             <!-- Card Actions -->
-                            <div class="px-5 pb-5 flex space-x-2">
-                                <button @click="openEditPlanModal(plan)" 
-                                        class="flex-1 py-2 px-4 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition flex items-center justify-center">
-                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                                    </svg>
-                                    Edit
-                                </button>
-                                <button @click="deletePlan(plan.id)" 
-                                        class="flex-1 py-2 px-4 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition flex items-center justify-center">
-                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                    </svg>
-                                    Delete
+                            <div class="px-5 pb-5 space-y-2">
+                                <div class="flex space-x-2">
+                                    <button @click="openEditPlanModal(plan)" 
+                                            class="flex-1 py-2 px-4 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition flex items-center justify-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                        </svg>
+                                        Edit
+                                    </button>
+                                    <button @click="deletePlan(plan.id)" 
+                                            class="flex-1 py-2 px-4 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition flex items-center justify-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Delete
+                                    </button>
+                                </div>
+                                <button x-show="!plan.is_default" @click="setDefaultPlan(plan.id)" 
+                                        class="w-full py-2 px-4 bg-yellow-50 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-100 transition flex items-center justify-center">
+                                    ⭐ Set as Default
                                 </button>
                             </div>
                         </div>
@@ -414,6 +423,7 @@
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">📆 Monthly</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">🔄 Reset</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">⭐ Default</th>
                                     <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
@@ -435,6 +445,10 @@
                                         <td class="px-6 py-4">
                                             <span x-show="plan.is_active" class="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
                                             <span x-show="!plan.is_active" class="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Inactive</span>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span x-show="plan.is_default" class="px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">⭐ Default</span>
+                                            <button x-show="!plan.is_default" @click="setDefaultPlan(plan.id)" class="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full hover:bg-yellow-100 hover:text-yellow-700 transition">Set</button>
                                         </td>
                                         <td class="px-6 py-4">
                                             <div class="flex items-center space-x-2">
@@ -507,6 +521,11 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-1">✨ Features (comma separated)</label>
                                 <input type="text" x-model="newPlanFeaturesText" placeholder="Export CSV, Analisis dasar"
                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" x-model="newPlan.is_default" id="newPlanDefault"
+                                       class="w-5 h-5 text-yellow-500 border-gray-300 rounded focus:ring-yellow-500">
+                                <label for="newPlanDefault" class="ml-2 text-sm font-medium text-gray-700">⭐ Set as Default Plan</label>
                             </div>
                         </div>
                         <button type="submit" class="w-full sm:w-auto bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">
@@ -770,7 +789,8 @@
                     daily_query_limit: 50,
                     monthly_query_limit: 500,
                     reset_hours: 1,
-                    features: []
+                    features: [],
+                    is_default: false
                 },
                 editPlan: {
                     id: null,
@@ -781,7 +801,8 @@
                     daily_query_limit: 50,
                     monthly_query_limit: 500,
                     reset_hours: 1,
-                    features: []
+                    features: [],
+                    is_default: false
                 },
 
                 // Toast
@@ -1027,7 +1048,8 @@
                             daily_query_limit: 50,
                             monthly_query_limit: 500,
                             reset_hours: 1,
-                            features: []
+                            features: [],
+                            is_default: false
                         };
                         this.newPlanFeaturesText = '';
                     } catch (e) {
@@ -1074,6 +1096,17 @@
                     try {
                         await this.api(`/plans/${planId}`, { method: 'DELETE' });
                         this.showToast('Plan deleted', 'success');
+                        this.loadPlans();
+                    } catch (e) {
+                        this.showToast(e.message, 'error');
+                    }
+                },
+
+                async setDefaultPlan(planId) {
+                    if (!confirm('Set this plan as default for new users?')) return;
+                    try {
+                        await this.api(`/plans/${planId}/default`, { method: 'PUT' });
+                        this.showToast('Default plan updated', 'success');
                         this.loadPlans();
                     } catch (e) {
                         this.showToast(e.message, 'error');

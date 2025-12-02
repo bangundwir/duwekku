@@ -523,6 +523,11 @@ class SQLiteDB:
         """Register or update a bot user."""
         with self._get_connection() as conn:
             now = datetime.now().isoformat()
+            
+            # Check if user already exists
+            cursor = conn.execute("SELECT user_id FROM bot_users WHERE user_id = ?", (user_id,))
+            is_new_user = cursor.fetchone() is None
+            
             conn.execute(
                 """
                 INSERT INTO bot_users (user_id, username, first_name, registered_at, last_active)
@@ -535,6 +540,20 @@ class SQLiteDB:
                 (user_id, username, first_name, now, now)
             )
             conn.commit()
+        
+        # Apply default plan limits for new users
+        if is_new_user:
+            default_plan = self.get_default_plan()
+            if default_plan:
+                self.update_bot_user_limits(user_id, default_plan.daily_query_limit, default_plan.monthly_query_limit)
+                # Also update hourly limit
+                with self._get_connection() as conn:
+                    conn.execute(
+                        "UPDATE bot_users SET hourly_query_limit = ?, reset_hours = ?, subscription_plan_name = ? WHERE user_id = ?",
+                        (default_plan.hourly_query_limit, default_plan.reset_hours, default_plan.name, user_id)
+                    )
+                    conn.commit()
+        
         return self.get_bot_user(user_id)
     
     def get_bot_user(self, user_id: int) -> Optional[BotUser]:
@@ -753,11 +772,19 @@ class SQLiteDB:
                 conn.execute("ALTER TABLE subscription_plans ADD COLUMN reset_hours INTEGER DEFAULT 1")
             except:
                 pass
+            try:
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN is_default INTEGER DEFAULT 0")
+            except:
+                pass
+            
+            # If this plan is default, unset other defaults first
+            if plan.is_default:
+                conn.execute("UPDATE subscription_plans SET is_default = 0")
             
             cursor = conn.execute(
                 """
-                INSERT INTO subscription_plans (name, hourly_query_limit, daily_query_limit, monthly_query_limit, reset_hours, price, duration_days, features, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO subscription_plans (name, hourly_query_limit, daily_query_limit, monthly_query_limit, reset_hours, price, duration_days, features, is_active, is_default, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     plan.name,
@@ -769,6 +796,7 @@ class SQLiteDB:
                     plan.duration_days,
                     plan.to_dict()["features"],
                     1 if plan.is_active else 0,
+                    1 if plan.is_default else 0,
                     plan.created_at.isoformat(),
                 )
             )
@@ -818,6 +846,42 @@ class SQLiteDB:
         """Delete a subscription plan."""
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM subscription_plans WHERE id = ?", (plan_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_default_plan(self) -> Optional[SubscriptionPlan]:
+        """Get the default subscription plan for new users."""
+        with self._get_connection() as conn:
+            # Add column if doesn't exist (migration)
+            try:
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN is_default INTEGER DEFAULT 0")
+            except:
+                pass
+            
+            cursor = conn.execute("SELECT * FROM subscription_plans WHERE is_default = 1 AND is_active = 1 LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return SubscriptionPlan.from_dict(dict(row))
+            # Fallback to first active plan (usually Free)
+            cursor = conn.execute("SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY price ASC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return SubscriptionPlan.from_dict(dict(row))
+            return None
+    
+    def set_default_plan(self, plan_id: int) -> bool:
+        """Set a plan as the default for new users."""
+        with self._get_connection() as conn:
+            # Add column if doesn't exist (migration)
+            try:
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN is_default INTEGER DEFAULT 0")
+            except:
+                pass
+            
+            # Unset all defaults first
+            conn.execute("UPDATE subscription_plans SET is_default = 0")
+            # Set the new default
+            cursor = conn.execute("UPDATE subscription_plans SET is_default = 1 WHERE id = ?", (plan_id,))
             conn.commit()
             return cursor.rowcount > 0
     
