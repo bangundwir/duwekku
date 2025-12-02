@@ -135,32 +135,32 @@ Balas HANYA dengan JSON valid tanpa penjelasan:
         
         return f"""Kamu adalah asisten untuk mengekstrak informasi langganan/subscription dari pesan dalam bahasa Indonesia.
 
+PENTING: Ekstrak nama layanan APAPUN yang disebutkan pengguna, tidak harus layanan terkenal.
+Layanan bisa berupa: website, aplikasi, platform, atau layanan online apapun.
+
 Tanggal hari ini: {today}
 
-Ekstrak informasi berikut dari pesan pengguna:
-- name: nama layanan (Netflix, Spotify, VPS, Domain, YouTube Premium, OpenAI, ChatGPT, dll) - capitalize dengan benar
-- amount: biaya dalam angka (konversi: rb/ribu=1000, jt/juta=1000000, k=1000). Contoh: 20rb=20000, 50rb=50000, 1jt=1000000
+Ekstrak informasi berikut:
+- name: nama layanan APAPUN yang disebutkan (capitalize dengan benar). Bisa Netflix, Spotify, atau layanan tidak terkenal seperti video.com, myapp.id, dll
+- amount: biaya dalam angka (konversi: rb/ribu=1000, jt/juta=1000000, k=1000). Contoh: 20rb=20000, 50rb=50000
 - category: kategori HARUS salah satu dari: streaming, hosting, domain, software, other
-  * streaming: Netflix, Spotify, YouTube Premium, Disney+, HBO, Apple Music
-  * hosting: VPS, Cloud, Server, DigitalOcean, AWS, Heroku
-  * domain: Domain, Namecheap, GoDaddy
-  * software: Adobe, Microsoft 365, Canva, Figma, JetBrains, OpenAI, ChatGPT, GitHub Copilot
-  * other: lainnya
-- duration_months: durasi dalam bulan (1 bulan=1, 1 tahun=12, setahun=12, sebulan=1)
-- start_date: tanggal mulai format YYYY-MM-DD. Jika tidak disebutkan gunakan null. Jika "hari ini" gunakan {today}. 
-  Konversi nama bulan Indonesia/Inggris ke angka:
-  januari/january=01, februari/february=02, maret/march=03, april=04, mei/may=05, juni/june=06, 
-  juli/july=07, agustus/august=08, september=09, oktober/october=10, november=11, desember/december=12
-  
-  Kata kunci tanggal: "mulai", "dimulai", "dari", "start", "sejak" menandakan start_date
+  * streaming: layanan video/musik (Netflix, Spotify, YouTube, Disney+, HBO, atau website streaming lainnya)
+  * hosting: VPS, Cloud, Server, web hosting
+  * domain: Domain, registrar
+  * software: aplikasi, tools, AI (Adobe, Canva, OpenAI, ChatGPT, dll)
+  * other: layanan lain yang tidak masuk kategori di atas (gunakan ini jika ragu)
+- duration_months: durasi dalam bulan (1 bulan=1, 1 tahun=12, setahun=12, sebulan=1, 2 bulan=2, 3 bulan=3, 6 bulan=6)
+- start_date: tanggal mulai format YYYY-MM-DD. Jika tidak disebutkan gunakan null. Jika "hari ini" gunakan {today}.
+  Konversi bulan: januari=01, februari=02, maret=03, april=04, mei=05, juni=06, juli=07, agustus=08, september=09, oktober=10, november=11, desember/december=12
 
 Contoh:
 - "langganan netflix 50rb 1 bulan" -> {{"name": "Netflix", "amount": 50000, "category": "streaming", "duration_months": 1, "start_date": null}}
-- "berlangganan spotify 60rb setahun mulai 1 januari 2025" -> {{"name": "Spotify", "amount": 60000, "category": "streaming", "duration_months": 12, "start_date": "2025-01-01"}}
+- "langganan video.com 25rb sebulan" -> {{"name": "Video.com", "amount": 25000, "category": "streaming", "duration_months": 1, "start_date": null}}
+- "berlangganan myapp.id 100rb 3 bulan mulai 1 januari 2025" -> {{"name": "Myapp.id", "amount": 100000, "category": "other", "duration_months": 3, "start_date": "2025-01-01"}}
 - "langganan openai 20rb 1 bulan dimulai 1 desember 2025" -> {{"name": "OpenAI", "amount": 20000, "category": "software", "duration_months": 1, "start_date": "2025-12-01"}}
-- "langganan chatgpt 300rb 1 bulan mulai hari ini" -> {{"name": "ChatGPT", "amount": 300000, "category": "software", "duration_months": 1, "start_date": "{today}"}}
+- "langanan spotify 60rb setahun" -> {{"name": "Spotify", "amount": 60000, "category": "streaming", "duration_months": 12, "start_date": null}}
 
 Pesan pengguna: "{message}"
 
 Balas HANYA dengan JSON valid tanpa penjelasan:
-{{"name": "nama", "amount": angka, "category": "kategori", "duration_months": angka, "start_date": "YYYY-MM-DD atau null"}}"""
+{{"name": "nama layanan", "amount": angka, "category": "kategori", "duration_months": angka, "start_date": "YYYY-MM-DD atau null"}}"""

@@ -130,16 +130,34 @@ class BotHandler:
         # Show typing indicator
         await update.message.chat.send_action("typing")
         
-        # Check if it's a subscription message - expanded keywords
-        sub_keywords = ["langganan", "berlangganan", "subscribe", "subscription", "subs", "netflix", "spotify", "youtube premium", "disney", "hbo", "vps", "hosting", "domain", "openai", "chatgpt", "github copilot", "adobe", "canva", "figma"]
-        msg_lower = message_text.lower()
-        is_subscription = any(kw in msg_lower for kw in sub_keywords)
+        # Check if it's a subscription message
+        # Primary keywords that strongly indicate subscription intent
+        sub_keywords = [
+            "langganan", "berlangganan", "langanan", "berlanganan",  # typo variants
+            "subscribe", "subscription", "subs", "member", "membership",
+            "bayar bulanan", "biaya bulanan", "tagihan bulanan"
+        ]
         
-        # Also check for duration patterns that indicate subscription
-        duration_patterns = ["bulan", "tahun", "setahun", "sebulan", "minggu"]
+        # Duration patterns that indicate subscription
+        duration_patterns = ["bulan", "tahun", "setahun", "sebulan", "minggu", "tahunan", "bulanan"]
+        
+        msg_lower = message_text.lower()
+        
+        # Check for subscription keywords
+        has_sub_keyword = any(kw in msg_lower for kw in sub_keywords)
+        
+        # Check for duration patterns
         has_duration = any(p in msg_lower for p in duration_patterns)
         
-        logger.info(f"Message: {message_text}, is_subscription: {is_subscription}, has_duration: {has_duration}")
+        # Subscription is detected if:
+        # 1. Has subscription keyword + duration, OR
+        # 2. Has subscription keyword + amount pattern (rb/jt/ribu/juta)
+        import re
+        has_amount = bool(re.search(r'\d+\s*(rb|ribu|jt|juta|k|rp)', msg_lower))
+        
+        is_subscription = has_sub_keyword and (has_duration or has_amount)
+        
+        logger.info(f"Message: {message_text}, has_sub_keyword: {has_sub_keyword}, has_duration: {has_duration}, has_amount: {has_amount}, is_subscription: {is_subscription}")
         
         if is_subscription and has_duration and self.provider_manager and self.subscription_manager:
             # Parse as subscription
@@ -231,12 +249,17 @@ class BotHandler:
                 await update.message.reply_text(
                     "⚠️ *Gagal memproses langganan*\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "Coba format seperti ini:\n"
-                    "• `langganan netflix 50rb 1 bulan`\n"
-                    "• `langganan openai 20rb 1 bulan mulai 1 desember 2025`\n"
-                    "• `berlangganan spotify 60rb setahun`\n\n"
+                    "Pastikan format mengandung:\n"
+                    "• Kata `langganan` atau `berlangganan`\n"
+                    "• Nama layanan (apapun)\n"
+                    "• Harga (contoh: 50rb, 100k, 1jt)\n"
+                    "• Durasi (contoh: 1 bulan, setahun)\n\n"
+                    "💡 *Contoh:*\n"
+                    "• `langganan video.com 25rb 1 bulan`\n"
+                    "• `langganan myapp 100rb 3 bulan`\n"
+                    "• `berlangganan netflix 50rb sebulan`\n\n"
                     "Atau gunakan command:\n"
-                    "`/addsub OpenAI 20000 2025-12-01 2026-01-01 software`",
+                    "`/addsub NamaLayanan 50000 2025-01-01 2025-02-01 other`",
                     parse_mode="Markdown"
                 )
                 return
