@@ -1262,3 +1262,595 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 </html>'''
         
         return html
+
+
+    @staticmethod
+    def subscriptions_to_html_enhanced(
+        subscriptions: list[Subscription],
+        title: str = "Daftar Langganan"
+    ) -> str:
+        """Export subscriptions to enhanced HTML with live countdown, animations, filters.
+        
+        Features:
+        - Live countdown timer (days, hours, minutes, seconds)
+        - CSS animations for card appearances
+        - Filter by status (All, Active, Expiring Soon, Expired)
+        - Sort by name, amount, expiry date
+        - Real-time search
+        - Statistics and insights
+        - Timeline view
+        """
+        now = datetime.now()
+        
+        def fmt(amount: float) -> str:
+            return f"Rp {amount:,.0f}".replace(",", ".")
+        
+        # Calculate totals
+        active_subs = [s for s in subscriptions if s.status != "expired"]
+        expiring_subs = [s for s in subscriptions if s.status == "expiring_soon"]
+        expired_subs = [s for s in subscriptions if s.status == "expired"]
+        total_monthly = sum(s.amount for s in active_subs)
+        total_yearly = total_monthly * 12
+        
+        # Upcoming renewals (next 30 days)
+        upcoming = [s for s in subscriptions if 0 < s.days_remaining <= 30]
+        
+        # Group by category
+        by_category = {}
+        for sub in subscriptions:
+            if sub.category not in by_category:
+                by_category[sub.category] = []
+            by_category[sub.category].append(sub)
+        
+        # Category data for chart
+        cat_data = []
+        for cat, subs in by_category.items():
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            if cat_total > 0:
+                cat_data.append({"name": cat.title(), "amount": cat_total})
+        cat_json = json.dumps(cat_data)
+
+        # Generate subscription data as JSON for JavaScript
+        sub_data = []
+        for s in subscriptions:
+            sub_data.append({
+                "id": s.id,
+                "name": s.name,
+                "amount": s.amount,
+                "category": s.category,
+                "start_date": s.start_date.isoformat(),
+                "end_date": s.end_date.isoformat(),
+                "status": s.status,
+                "days_remaining": s.days_remaining,
+            })
+        sub_json = json.dumps(sub_data)
+        
+        # Category emoji mapping
+        cat_emoji = {
+            "streaming": "🎬", "hosting": "🖥️", "domain": "🌐",
+            "software": "💿", "other": "📦",
+        }
+        
+        # Status info
+        status_info = {
+            "active": ("✅", "Aktif", "#10b981"),
+            "expiring_soon": ("⚠️", "Segera Berakhir", "#f59e0b"),
+            "expired": ("❌", "Kadaluarsa", "#ef4444"),
+        }
+        
+        # Build HTML
+        html = f'''<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="theme-color" content="#0f0f1a">
+    <title>{title}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+'''
+        html += TransactionExporter._get_enhanced_styles()
+        html += TransactionExporter._get_enhanced_body(
+            title, now, fmt, subscriptions, active_subs, expiring_subs, expired_subs,
+            total_monthly, total_yearly, upcoming, by_category, cat_emoji, status_info,
+            sub_json, cat_json
+        )
+        return html
+
+    @staticmethod
+    def _get_enhanced_styles() -> str:
+        """Generate enhanced CSS with animations."""
+        return '''<style>
+:root{--primary:#6366f1;--income:#10b981;--expense:#ef4444;--warning:#f59e0b;--bg:#0f0f1a;--card:#1a1a2e;--card-hover:#252542;--text:#fff;--text-muted:#9ca3af;--border:#2d2d4a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+.container{max-width:100%;margin:0 auto}
+.header{background:linear-gradient(135deg,var(--card),#16213e);padding:24px;text-align:center;position:sticky;top:0;z-index:100;border-bottom:1px solid var(--border)}
+.header h1{font-size:22px;margin-bottom:6px}
+.header .subtitle{font-size:12px;color:var(--text-muted)}
+
+/* Animations */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes progressFill{from{width:0}to{width:var(--progress)}}
+.animate-in{animation:fadeInUp .5s ease forwards;opacity:0}
+.pulse{animation:pulse 2s infinite}
+
+/* Summary Cards */
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:16px}
+.summary-card{background:var(--card);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);transition:transform .2s,box-shadow .2s}
+.summary-card:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.3)}
+.summary-card .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.summary-card .value{font-size:16px;font-weight:700}
+.summary-card.active .value{color:var(--income)}
+.summary-card.warning .value{color:var(--warning)}
+.summary-card.expired .value{color:var(--expense)}
+.summary-card.monthly .value{color:var(--primary)}
+
+/* Filter & Search */
+.controls{padding:12px 16px;background:var(--card);margin:0 16px;border-radius:12px;border:1px solid var(--border)}
+.search-box{width:100%;padding:12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;margin-bottom:12px}
+.search-box:focus{outline:none;border-color:var(--primary)}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.filter-btn{padding:8px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text-muted);font-size:12px;cursor:pointer;transition:all .2s}
+.filter-btn:hover{border-color:var(--primary);color:var(--primary)}
+.filter-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.sort-row{display:flex;gap:8px;align-items:center}
+.sort-row label{font-size:11px;color:var(--text-muted)}
+.sort-select{padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px}
+</style>'''
+
+    @staticmethod
+    def _get_enhanced_styles_part2() -> str:
+        """Generate enhanced CSS part 2."""
+        return '''<style>
+/* Stats Bar */
+.stats-bar{display:flex;justify-content:space-between;padding:12px 16px;font-size:11px;color:var(--text-muted);margin-top:12px}
+
+/* Nav Tabs */
+.nav-tabs{display:flex;background:var(--card);padding:6px;margin:16px;border-radius:10px;gap:6px}
+.nav-tab{flex:1;padding:10px;text-align:center;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted);transition:all .2s}
+.nav-tab:hover{background:var(--card-hover)}
+.nav-tab.active{background:var(--primary);color:#fff}
+.tab-content{display:none;padding:16px}
+.tab-content.active{display:block}
+
+/* Subscription Cards */
+.sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.sub-card{background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--border);border-left:4px solid var(--status-color);transition:all .3s;cursor:pointer}
+.sub-card:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,.4);background:var(--card-hover)}
+.sub-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sub-name{font-size:16px;font-weight:600}
+.sub-status{font-size:11px;padding:4px 8px;border-radius:12px;background:rgba(255,255,255,.1)}
+.sub-amount{font-size:22px;font-weight:700;color:var(--primary);margin-bottom:8px}
+.sub-category{font-size:12px;color:var(--text-muted);margin-bottom:12px}
+.sub-dates{display:flex;gap:16px;margin-bottom:12px;font-size:12px}
+.sub-dates .date-item{flex:1}
+.sub-dates .date-label{color:var(--text-muted);font-size:10px;text-transform:uppercase}
+.sub-dates .date-value{font-weight:500}
+
+/* Countdown */
+.countdown-section{background:var(--bg);border-radius:8px;padding:12px;margin-bottom:12px}
+.countdown-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px}
+.countdown-timer{display:flex;gap:8px;justify-content:center}
+.countdown-item{text-align:center}
+.countdown-value{font-size:20px;font-weight:700;color:var(--primary)}
+.countdown-unit{font-size:9px;color:var(--text-muted);text-transform:uppercase}
+.countdown-timer.warning .countdown-value{color:var(--warning)}
+.countdown-timer.critical .countdown-value{color:var(--expense)}
+.countdown-timer.expired .countdown-value{color:var(--expense)}
+
+/* Progress Bar */
+.progress-section{margin-top:8px}
+.progress-bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;background:var(--status-color);animation:progressFill 1s ease forwards}
+.progress-text{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:4px}
+</style>'''
+
+    @staticmethod
+    def _get_enhanced_styles_part3() -> str:
+        """Generate enhanced CSS part 3."""
+        return '''<style>
+/* Timeline */
+.timeline{position:relative;padding-left:24px}
+.timeline::before{content:'';position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--border)}
+.timeline-item{position:relative;padding-bottom:20px}
+.timeline-item::before{content:'';position:absolute;left:-20px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--status-color);border:2px solid var(--bg)}
+.timeline-content{background:var(--card);border-radius:8px;padding:12px;border:1px solid var(--border)}
+.timeline-date{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+.timeline-title{font-size:14px;font-weight:600}
+.timeline-amount{font-size:12px;color:var(--primary)}
+
+/* Upcoming Section */
+.upcoming-section{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--border)}
+.upcoming-title{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.upcoming-list{display:flex;flex-direction:column;gap:8px}
+.upcoming-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);border-radius:8px}
+.upcoming-name{font-size:13px;font-weight:500}
+.upcoming-days{font-size:12px;padding:4px 10px;border-radius:12px;background:var(--warning);color:#000;font-weight:600}
+.upcoming-days.critical{background:var(--expense);color:#fff}
+
+/* Chart Section */
+.chart-section{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--border)}
+.chart-section h3{font-size:14px;margin-bottom:12px;text-align:center}
+.chart-container{height:220px;position:relative}
+
+/* Category Breakdown */
+.category-breakdown{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:16px}
+.cat-item{background:var(--bg);border-radius:8px;padding:12px;text-align:center}
+.cat-emoji{font-size:24px;margin-bottom:4px}
+.cat-name{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+.cat-amount{font-size:14px;font-weight:600}
+.cat-pct{font-size:10px;color:var(--text-muted)}
+
+/* Footer */
+.footer{text-align:center;padding:24px;color:var(--text-muted);font-size:11px;border-top:1px solid var(--border);margin-top:24px}
+
+/* Responsive */
+@media(max-width:600px){.container{padding:0}.summary-grid{grid-template-columns:repeat(2,1fr);padding:12px}.sub-grid{grid-template-columns:1fr}.countdown-value{font-size:16px}.nav-tabs{margin:12px}.tab-content{padding:12px}}
+@media(min-width:768px){.container{max-width:1000px;margin:20px auto;border-radius:20px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,.5)}}
+@media print{body{background:#fff;color:#000}.header{background:#f3f4f6;color:#000}.controls{display:none}}
+</style>'''
+
+    @staticmethod
+    def _get_enhanced_body(title, now, fmt, subscriptions, active_subs, expiring_subs, 
+                           expired_subs, total_monthly, total_yearly, upcoming, 
+                           by_category, cat_emoji, status_info, sub_json, cat_json) -> str:
+        """Generate enhanced HTML body."""
+        # Build upcoming renewals HTML
+        upcoming_html = ""
+        if upcoming:
+            upcoming_items = ""
+            for s in sorted(upcoming, key=lambda x: x.days_remaining):
+                critical_class = "critical" if s.days_remaining <= 3 else ""
+                upcoming_items += f'''
+                <div class="upcoming-item">
+                    <span class="upcoming-name">{s.name}</span>
+                    <span class="upcoming-days {critical_class}">{s.days_remaining} hari</span>
+                </div>'''
+            upcoming_html = f'''
+            <div class="upcoming-section animate-in" style="animation-delay:.2s">
+                <div class="upcoming-title">⚠️ Segera Berakhir (30 hari)</div>
+                <div class="upcoming-list">{upcoming_items}</div>
+            </div>'''
+        
+        # Build category breakdown HTML
+        cat_breakdown = ""
+        total_active = sum(s.amount for s in active_subs)
+        for cat, subs in sorted(by_category.items()):
+            cat_total = sum(s.amount for s in subs if s.status != "expired")
+            if cat_total > 0:
+                pct = (cat_total / total_active * 100) if total_active > 0 else 0
+                emoji = cat_emoji.get(cat, "📦")
+                cat_breakdown += f'''
+                <div class="cat-item">
+                    <div class="cat-emoji">{emoji}</div>
+                    <div class="cat-name">{cat.title()}</div>
+                    <div class="cat-amount">{fmt(cat_total)}</div>
+                    <div class="cat-pct">{pct:.1f}%</div>
+                </div>'''
+        
+        return TransactionExporter._get_enhanced_body_html(
+            title, now, fmt, subscriptions, active_subs, expiring_subs, expired_subs,
+            total_monthly, total_yearly, upcoming_html, cat_breakdown, 
+            by_category, cat_emoji, status_info, sub_json, cat_json
+        )
+
+    @staticmethod
+    def _get_enhanced_body_html(title, now, fmt, subscriptions, active_subs, expiring_subs,
+                                 expired_subs, total_monthly, total_yearly, upcoming_html,
+                                 cat_breakdown, by_category, cat_emoji, status_info, 
+                                 sub_json, cat_json) -> str:
+        """Generate the main HTML body content."""
+        # Build subscription cards
+        sub_cards = ""
+        for i, sub in enumerate(sorted(subscriptions, key=lambda x: (x.status != "expiring_soon", x.days_remaining))):
+            s_emoji, s_text, s_color = status_info.get(sub.status, ("📦", "Unknown", "#9ca3af"))
+            c_emoji = cat_emoji.get(sub.category, "📦")
+            
+            # Calculate progress
+            total_days = (sub.end_date - sub.start_date).days
+            elapsed_days = (datetime.now().date() - sub.start_date).days
+            progress = min(100, max(0, (elapsed_days / total_days * 100) if total_days > 0 else 0))
+            
+            # Countdown class
+            countdown_class = ""
+            if sub.days_remaining <= 0:
+                countdown_class = "expired"
+            elif sub.days_remaining <= 3:
+                countdown_class = "critical"
+            elif sub.days_remaining <= 7:
+                countdown_class = "warning"
+            
+            sub_cards += f'''
+            <div class="sub-card animate-in" style="--status-color:{s_color};--progress:{progress}%;animation-delay:{i*0.1}s" data-id="{sub.id}" data-status="{sub.status}" data-name="{sub.name.lower()}" data-amount="{sub.amount}" data-end="{sub.end_date.isoformat()}">
+                <div class="sub-header">
+                    <span class="sub-name">{c_emoji} {sub.name}</span>
+                    <span class="sub-status">{s_emoji} {s_text}</span>
+                </div>
+                <div class="sub-amount">{fmt(sub.amount)}<span style="font-size:12px;color:var(--text-muted)">/bulan</span></div>
+                <div class="sub-category">{sub.category.title()}</div>
+                <div class="sub-dates">
+                    <div class="date-item"><div class="date-label">Mulai</div><div class="date-value">{sub.start_date.strftime("%d %b %Y")}</div></div>
+                    <div class="date-item"><div class="date-label">Berakhir</div><div class="date-value">{sub.end_date.strftime("%d %b %Y")}</div></div>
+                </div>
+                <div class="countdown-section">
+                    <div class="countdown-label">Sisa Waktu</div>
+                    <div class="countdown-timer {countdown_class}" data-end="{sub.end_date.isoformat()}">
+                        <div class="countdown-item"><div class="countdown-value" data-days>--</div><div class="countdown-unit">Hari</div></div>
+                        <div class="countdown-item"><div class="countdown-value" data-hours>--</div><div class="countdown-unit">Jam</div></div>
+                        <div class="countdown-item"><div class="countdown-value" data-mins>--</div><div class="countdown-unit">Menit</div></div>
+                        <div class="countdown-item"><div class="countdown-value" data-secs>--</div><div class="countdown-unit">Detik</div></div>
+                    </div>
+                </div>
+                <div class="progress-section">
+                    <div class="progress-bar"><div class="progress-fill" style="--progress:{progress}%"></div></div>
+                    <div class="progress-text"><span>{progress:.0f}% terpakai</span><span>{sub.days_remaining} hari tersisa</span></div>
+                </div>
+            </div>'''
+        
+        return TransactionExporter._build_final_html(
+            title, now, fmt, len(subscriptions), len(active_subs), len(expiring_subs),
+            len(expired_subs), total_monthly, total_yearly, upcoming_html, cat_breakdown,
+            sub_cards, sub_json, cat_json
+        )
+
+    @staticmethod
+    def _build_final_html(title, now, fmt, total_count, active_count, expiring_count,
+                          expired_count, total_monthly, total_yearly, upcoming_html,
+                          cat_breakdown, sub_cards, sub_json, cat_json) -> str:
+        """Build the final HTML document."""
+        styles_p2 = TransactionExporter._get_enhanced_styles_part2()
+        styles_p3 = TransactionExporter._get_enhanced_styles_part3()
+        
+        return f'''{styles_p2}
+{styles_p3}
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📅 {title}</h1>
+        <div class="subtitle">Diperbarui: {now.strftime("%d %B %Y, %H:%M")} • Live Countdown</div>
+    </div>
+    
+    <div class="summary-grid">
+        <div class="summary-card active animate-in" style="animation-delay:.1s">
+            <div class="label">Aktif</div>
+            <div class="value">{active_count}</div>
+        </div>
+        <div class="summary-card warning animate-in" style="animation-delay:.15s">
+            <div class="label">Segera Berakhir</div>
+            <div class="value">{expiring_count}</div>
+        </div>
+        <div class="summary-card expired animate-in" style="animation-delay:.2s">
+            <div class="label">Kadaluarsa</div>
+            <div class="value">{expired_count}</div>
+        </div>
+        <div class="summary-card monthly animate-in" style="animation-delay:.25s">
+            <div class="label">Biaya/Bulan</div>
+            <div class="value">{fmt(total_monthly)}</div>
+        </div>
+    </div>
+    
+    <div class="controls animate-in" style="animation-delay:.3s">
+        <input type="text" class="search-box" placeholder="🔍 Cari langganan..." id="searchInput" oninput="filterSubs()">
+        <div class="filter-row">
+            <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">📊 Semua ({total_count})</button>
+            <button class="filter-btn" data-filter="active" onclick="setFilter('active')">✅ Aktif ({active_count})</button>
+            <button class="filter-btn" data-filter="expiring_soon" onclick="setFilter('expiring_soon')">⚠️ Segera ({expiring_count})</button>
+            <button class="filter-btn" data-filter="expired" onclick="setFilter('expired')">❌ Expired ({expired_count})</button>
+        </div>
+        <div class="sort-row">
+            <label>Urutkan:</label>
+            <select class="sort-select" id="sortSelect" onchange="sortSubs()">
+                <option value="days_remaining">⏱️ Sisa Hari</option>
+                <option value="name">🔤 Nama</option>
+                <option value="amount">💰 Jumlah</option>
+                <option value="end_date">📅 Tanggal Berakhir</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="stats-bar">
+        <span>📝 <span id="visibleCount">{total_count}</span> langganan</span>
+        <span>💰 Total: {fmt(total_yearly)}/tahun</span>
+    </div>
+    
+    <div class="nav-tabs">
+        <div class="nav-tab active" onclick="showTab('overview')">📊 Ringkasan</div>
+        <div class="nav-tab" onclick="showTab('list')">📋 Daftar</div>
+        <div class="nav-tab" onclick="showTab('timeline')">📅 Timeline</div>
+    </div>
+'''
+        + f'''
+    <div id="overview" class="tab-content active">
+        {upcoming_html}
+        <div class="chart-section animate-in" style="animation-delay:.4s">
+            <h3>📊 Distribusi Biaya per Kategori</h3>
+            <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+            <div class="category-breakdown">{cat_breakdown}</div>
+        </div>
+    </div>
+    
+    <div id="list" class="tab-content">
+        <div class="sub-grid" id="subGrid">{sub_cards}</div>
+    </div>
+    
+    <div id="timeline" class="tab-content">
+        <div class="timeline" id="timelineView"></div>
+    </div>
+    
+    <div class="footer">
+        <p>💰 Money Tracker Bot</p>
+        <p>{total_count} langganan • Total {fmt(total_monthly)}/bulan • {fmt(total_yearly)}/tahun</p>
+    </div>
+</div>
+''' + TransactionExporter._get_enhanced_scripts(sub_json, cat_json)
+
+    @staticmethod
+    def _get_enhanced_scripts(sub_json, cat_json) -> str:
+        """Generate JavaScript for countdown, filtering, sorting."""
+        return f'''
+<script>
+const allSubs = {sub_json};
+const catData = {cat_json};
+let currentFilter = 'all';
+let currentSort = 'days_remaining';
+
+// Format currency
+function fmt(n) {{ return 'Rp ' + n.toLocaleString('id-ID').replace(/,/g, '.'); }}
+
+// Tab switching
+function showTab(id) {{
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+    if (id === 'timeline') buildTimeline();
+}}
+
+// Filter subscriptions
+function setFilter(filter) {{
+    currentFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(b => {{
+        b.classList.toggle('active', b.dataset.filter === filter);
+    }});
+    filterSubs();
+}}
+
+function filterSubs() {{
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const cards = document.querySelectorAll('.sub-card');
+    let visible = 0;
+    
+    cards.forEach(card => {{
+        const status = card.dataset.status;
+        const name = card.dataset.name;
+        const matchFilter = currentFilter === 'all' || status === currentFilter;
+        const matchSearch = !search || name.includes(search);
+        
+        if (matchFilter && matchSearch) {{
+            card.style.display = '';
+            visible++;
+        }} else {{
+            card.style.display = 'none';
+        }}
+    }});
+    
+    document.getElementById('visibleCount').textContent = visible;
+}}
+
+// Sort subscriptions
+function sortSubs() {{
+    currentSort = document.getElementById('sortSelect').value;
+    const grid = document.getElementById('subGrid');
+    const cards = Array.from(grid.querySelectorAll('.sub-card'));
+    
+    cards.sort((a, b) => {{
+        if (currentSort === 'name') return a.dataset.name.localeCompare(b.dataset.name);
+        if (currentSort === 'amount') return parseFloat(b.dataset.amount) - parseFloat(a.dataset.amount);
+        if (currentSort === 'end_date') return new Date(a.dataset.end) - new Date(b.dataset.end);
+        return parseInt(a.dataset.end) - parseInt(b.dataset.end);
+    }});
+    
+    cards.forEach(card => grid.appendChild(card));
+}}
+</script>
+'''
+        + '''
+<script>
+// Live countdown timer
+function updateCountdowns() {
+    document.querySelectorAll('.countdown-timer').forEach(timer => {
+        const endDate = new Date(timer.dataset.end + 'T23:59:59');
+        const now = new Date();
+        const diff = endDate - now;
+        
+        if (diff <= 0) {
+            timer.classList.add('expired');
+            timer.querySelector('[data-days]').textContent = '0';
+            timer.querySelector('[data-hours]').textContent = '0';
+            timer.querySelector('[data-mins]').textContent = '0';
+            timer.querySelector('[data-secs]').textContent = '0';
+            return;
+        }
+        
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const secs = Math.floor((diff % (1000 * 60)) / 1000);
+        
+        timer.querySelector('[data-days]').textContent = days;
+        timer.querySelector('[data-hours]').textContent = hours.toString().padStart(2, '0');
+        timer.querySelector('[data-mins]').textContent = mins.toString().padStart(2, '0');
+        timer.querySelector('[data-secs]').textContent = secs.toString().padStart(2, '0');
+        
+        // Update warning classes
+        timer.classList.remove('warning', 'critical', 'expired');
+        if (days <= 0) timer.classList.add('expired');
+        else if (days <= 3) timer.classList.add('critical');
+        else if (days <= 7) timer.classList.add('warning');
+    });
+}
+
+// Build timeline view
+function buildTimeline() {
+    const timeline = document.getElementById('timelineView');
+    const sorted = [...allSubs].sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
+    
+    const statusColors = {active: '#10b981', expiring_soon: '#f59e0b', expired: '#ef4444'};
+    
+    timeline.innerHTML = sorted.map(s => {
+        const endDate = new Date(s.end_date);
+        const dateStr = endDate.toLocaleDateString('id-ID', {day: '2-digit', month: 'short', year: 'numeric'});
+        const color = statusColors[s.status] || '#9ca3af';
+        
+        return `<div class="timeline-item" style="--status-color:${color}">
+            <div class="timeline-content">
+                <div class="timeline-date">${dateStr}</div>
+                <div class="timeline-title">${s.name}</div>
+                <div class="timeline-amount">${fmt(s.amount)}/bulan</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// Initialize chart
+function initChart() {
+    if (catData.length === 0) return;
+    
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
+    
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'doughnut',
+        data: {
+            labels: catData.map(d => d.name),
+            datasets: [{
+                data: catData.map(d => d.amount),
+                backgroundColor: colors.slice(0, catData.length),
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {padding: 12, usePointStyle: true, font: {size: 11}, color: '#9ca3af'}
+                }
+            },
+            cutout: '60%'
+        }
+    });
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    updateCountdowns();
+    setInterval(updateCountdowns, 1000);
+    initChart();
+});
+</script>
+</body>
+</html>'''

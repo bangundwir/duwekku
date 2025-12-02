@@ -11,6 +11,8 @@ from src.ai.provider_manager import ProviderManager
 from src.utils.exporter import TransactionExporter
 from src.models.subscription import Subscription, SUBSCRIPTION_CATEGORIES
 from src.models.transaction import Transaction
+from src.subscription.formatter import SubscriptionFormatter
+from src.subscription.keyboard import SubscriptionKeyboardBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -555,12 +557,8 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
                 cost_info = self.subscription_manager.get_monthly_cost(user_id)
                 
-                def fmt(amount):
-                    return f"Rp {amount:,.0f}".replace(",", ".")
-                
                 if not subscriptions:
-                    keyboard = [[InlineKeyboardButton("➕ Tambah Langganan", callback_data="show_addsub")]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    reply_markup = SubscriptionKeyboardBuilder.category_selection()
                     await query.edit_message_text(
                         "📭 *BELUM ADA LANGGANAN*\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -580,32 +578,34 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 lines = [
                     "📅 *DAFTAR LANGGANAN*",
                     "━━━━━━━━━━━━━━━━━━━━━━━",
-                    f"💰 Total Biaya: *{fmt(cost_info['total'])}*/bulan",
-                    f"📊 Aktif: {active_count} │ ⚠️ Segera: {expiring_count} │ ❌ Expired: {expired_count}",
+                    f"💰 Total: *{SubscriptionFormatter.format_amount(cost_info['total'])}*/bulan",
+                    f"✅ {active_count} │ ⚠️ {expiring_count} │ ❌ {expired_count}",
                     "",
                 ]
                 
-                status_emoji = {"active": "✅", "expiring_soon": "⚠️", "expired": "❌"}
-                for sub in sorted(subscriptions, key=lambda x: (x.status != "expiring_soon", x.end_date)):
-                    s_emoji = status_emoji.get(sub.status, "📦")
+                # Sort: expiring soon first, then by end date
+                sorted_subs = sorted(subscriptions, key=lambda x: (x.status != "expiring_soon", x.days_remaining))
+                
+                for sub in sorted_subs[:8]:  # Limit to 8 for readability
+                    # Calculate progress
+                    total_days = (sub.end_date - sub.start_date).days
+                    elapsed = (date.today() - sub.start_date).days
+                    progress = min(100, max(0, (elapsed / total_days * 100) if total_days > 0 else 0))
                     
-                    # Better countdown display
-                    if sub.days_remaining <= 0:
-                        days_text = "❌ Expired"
-                    elif sub.days_remaining == 1:
-                        days_text = "⏰ 1 hari lagi!"
-                    elif sub.days_remaining <= 7:
-                        days_text = f"⚠️ {sub.days_remaining} hari lagi"
-                    elif sub.days_remaining <= 30:
-                        days_text = f"📆 {sub.days_remaining} hari"
-                    else:
-                        months = sub.days_remaining // 30
-                        days_text = f"📅 ~{months} bulan"
+                    status_emoji = SubscriptionFormatter.format_status_emoji(sub.status)
+                    cat_emoji = SubscriptionFormatter.format_category_emoji(sub.category)
+                    countdown = SubscriptionFormatter.format_countdown(sub.days_remaining)
+                    progress_bar = SubscriptionFormatter.format_progress_emoji(progress)
                     
-                    lines.append(f"{s_emoji} *{sub.name}*")
-                    lines.append(f"   💵 {fmt(sub.amount)} │ {days_text}")
-                    lines.append(f"   📅 {sub.start_date.strftime('%d/%m/%y')} → {sub.end_date.strftime('%d/%m/%y')} │ `{sub.id}`")
+                    lines.append(f"{status_emoji} *{sub.name}* {cat_emoji}")
+                    lines.append(f"   💵 {SubscriptionFormatter.format_amount(sub.amount)}")
+                    lines.append(f"   ⏱️ {countdown}")
+                    lines.append(f"   {progress_bar}")
+                    lines.append(f"   🆔 `{sub.id}`")
                     lines.append("")
+                
+                if len(subscriptions) > 8:
+                    lines.append(f"_...dan {len(subscriptions) - 8} lainnya_")
                 
                 keyboard = [
                     [
@@ -614,7 +614,11 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                     ],
                     [
                         InlineKeyboardButton("🗑️ Hapus", callback_data="show_delsub"),
+                        InlineKeyboardButton("🔄 Perpanjang", callback_data="show_renewsub"),
+                    ],
+                    [
                         InlineKeyboardButton("📥 Export HTML", callback_data="export_subs"),
+                        InlineKeyboardButton("📊 Export Stats", callback_data="export_subs_enhanced"),
                     ],
                     [
                         InlineKeyboardButton("🔄 Refresh", callback_data="show_subs"),
@@ -856,6 +860,129 @@ Sekarang bot akan menggunakan model ini untuk parsing transaksi.
                 else:
                     await query.edit_message_text("❌ Gagal menghapus langganan")
         
+        # Renew subscription callbacks
+        elif query.data == "show_renewsub":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+                
+                if not subscriptions:
+                    keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text("📭 Tidak ada langganan untuk diperpanjang.", reply_markup=reply_markup)
+                    return
+                
+                lines = [
+                    "🔄 *PERPANJANG LANGGANAN*",
+                    "━━━━━━━━━━━━━━━━━━━━━━━",
+                    "",
+                    "Pilih langganan yang ingin diperpanjang:",
+                    "",
+                ]
+                
+                keyboard = []
+                for sub in sorted(subscriptions, key=lambda x: x.days_remaining):
+                    status_emoji = SubscriptionFormatter.format_status_emoji(sub.status)
+                    btn_text = f"{status_emoji} {sub.name} ({sub.days_remaining}d)"
+                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"renew_select:{sub.id}")])
+                
+                keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("\n".join(lines), parse_mode="Markdown", reply_markup=reply_markup)
+        
+        elif query.data.startswith("renew_select:"):
+            sub_id = int(query.data.split(":")[1])
+            reply_markup = SubscriptionKeyboardBuilder.renew_options(sub_id)
+            
+            await query.edit_message_text(
+                "🔄 *PILIH DURASI PERPANJANGAN*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Pilih berapa lama ingin memperpanjang:",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        
+        elif query.data.startswith("sub_renew_do:"):
+            parts = query.data.split(":")
+            sub_id = int(parts[1])
+            months = int(parts[2])
+            user_id = query.from_user.id
+            
+            if self.subscription_manager:
+                from datetime import timedelta
+                sub = self.subscription_manager.get_subscription_by_id(user_id, sub_id)
+                
+                if sub:
+                    # Calculate new end date (approximate: 30 days per month)
+                    new_end = sub.end_date + timedelta(days=months * 30)
+                    
+                    if self.subscription_manager.renew_subscription(user_id, sub_id, new_end):
+                        keyboard = [[InlineKeyboardButton("📋 Lihat Langganan", callback_data="show_subs")]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        await query.edit_message_text(
+                            f"✅ *LANGGANAN DIPERPANJANG*\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"📦 *{sub.name}*\n"
+                            f"📅 Berakhir: {new_end.strftime('%d %b %Y')}\n"
+                            f"⏱️ Diperpanjang {months} bulan",
+                            parse_mode="Markdown",
+                            reply_markup=reply_markup
+                        )
+                    else:
+                        await query.edit_message_text("❌ Gagal memperpanjang langganan")
+                else:
+                    await query.edit_message_text("❌ Langganan tidak ditemukan")
+        
+        # Enhanced export subscription callback
+        elif query.data == "export_subs_enhanced":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+                
+                if not subscriptions:
+                    await query.edit_message_text("📭 Tidak ada langganan untuk diexport")
+                    return
+                
+                await query.edit_message_text("⏳ Sedang menyiapkan laporan interaktif...")
+                
+                # Generate enhanced HTML
+                html_content = TransactionExporter.subscriptions_to_html_enhanced(
+                    subscriptions=subscriptions,
+                    title="Daftar Langganan"
+                )
+                
+                # Calculate totals
+                active_subs = [s for s in subscriptions if s.status != "expired"]
+                expiring_subs = [s for s in subscriptions if s.status == "expiring_soon"]
+                total_monthly = sum(s.amount for s in active_subs)
+                
+                filename = f"langganan_enhanced_{datetime.now().strftime('%Y%m%d')}.html"
+                html_bytes = io.BytesIO(html_content.encode('utf-8'))
+                html_bytes.name = filename
+                
+                caption = f"""
+✅ *EXPORT LANGGANAN INTERAKTIF*
+━━━━━━━━━━━━━━━━━━━━━━━
+📅 Total: {len(subscriptions)} langganan
+✅ Aktif: {len(active_subs)}
+⚠️ Segera berakhir: {len(expiring_subs)}
+💰 Biaya: {SubscriptionFormatter.format_amount(total_monthly)}/bulan
+━━━━━━━━━━━━━━━━━━━━━━━
+✨ *Fitur:*
+• ⏱️ Live countdown timer
+• 🔍 Filter & search
+• 📊 Statistik & chart
+• 📅 Timeline view
+• 🎨 Animasi modern
+"""
+                await query.message.reply_document(
+                    document=html_bytes,
+                    filename=filename,
+                    caption=caption,
+                    parse_mode="Markdown"
+                )
+        
         # Subscription to Transaction callback
         elif query.data.startswith("sub_to_tx:"):
             user_id = query.from_user.id
@@ -949,6 +1076,50 @@ Pilih format export:
                 await self._send_csv_export(query.message, user_id, month_only)
             elif format_type == "html":
                 await self._send_html_export(query.message, user_id, month_only)
+        
+        # Export subscriptions callback (basic HTML)
+        elif query.data == "export_subs":
+            user_id = query.from_user.id
+            if self.subscription_manager:
+                subscriptions = self.subscription_manager.get_subscriptions(user_id, include_expired=True)
+                
+                if not subscriptions:
+                    keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="show_subs")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text("📭 Tidak ada langganan untuk diexport", reply_markup=reply_markup)
+                    return
+                
+                await query.edit_message_text("⏳ Sedang menyiapkan laporan langganan...")
+                
+                # Generate subscription HTML
+                html_content = TransactionExporter.subscriptions_to_html(
+                    subscriptions=subscriptions,
+                    title="Daftar Langganan"
+                )
+                
+                # Calculate totals
+                active_subs = [s for s in subscriptions if s.status != "expired"]
+                total_monthly = sum(s.amount for s in active_subs)
+                
+                filename = f"langganan_{datetime.now().strftime('%Y%m%d')}.html"
+                html_bytes = io.BytesIO(html_content.encode('utf-8'))
+                html_bytes.name = filename
+                
+                caption = f"""
+✅ *EXPORT DAFTAR LANGGANAN*
+━━━━━━━━━━━━━━━━━━━━━━━
+📅 Total: {len(subscriptions)} langganan
+✅ Aktif: {len(active_subs)}
+💰 Biaya: {SubscriptionFormatter.format_amount(total_monthly)}/bulan
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Buka di browser untuk melihat
+"""
+                await query.message.reply_document(
+                    document=html_bytes,
+                    filename=filename,
+                    caption=caption,
+                    parse_mode="Markdown"
+                )
 
     async def cmd_provider(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /provider command - show provider with interactive buttons."""
